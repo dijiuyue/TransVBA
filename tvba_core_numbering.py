@@ -98,39 +98,84 @@ class ComListResolver:
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        if self.doc:
-            self.doc.Close(SaveChanges=False)
-        if self.word:
-            self.word.Quit()
+        try:
+            if self.doc:
+                self.doc.Close(SaveChanges=False)
+        except Exception:
+            pass
+        try:
+            if self.word:
+                self.word.Quit()
+        except Exception:
+            pass
         return False
 
+    def _get_com_paragraph(self, para):
+        """Map a python-docx paragraph to the corresponding Word COM paragraph by index."""
+        # Find the index of the paragraph in the python-docx document
+        parent = para._element.getparent()
+        if parent is None:
+            return None
+        try:
+            idx = list(parent).index(para._element)
+        except ValueError:
+            return None
+        # COM is 1-indexed
+        return self.doc.Paragraphs(idx + 1)
+
     def get_list_level(self, para) -> int | None:
-        # Map python-docx paragraph to Word paragraph by index
-        # This is approximate; COM resolver works best when used directly
-        # with a COM document rather than python-docx paragraph
-        return None
+        com_para = self._get_com_paragraph(para)
+        if com_para is None:
+            return None
+        try:
+            list_format = com_para.Range.ListFormat
+            if list_format.ListType == 0:  # wdListNoNumbering = 0
+                return None
+            level = list_format.ListLevelNumber
+            return level if level >= 1 else None
+        except Exception:
+            return None
 
     def get_list_text(self, para) -> str | None:
-        return None
+        com_para = self._get_com_paragraph(para)
+        if com_para is None:
+            return None
+        try:
+            list_format = com_para.Range.ListFormat
+            if list_format.ListType == 0:  # wdListNoNumbering = 0
+                return None
+            return list_format.ListString
+        except Exception:
+            return None
 
     def diagnose(self, doc) -> list[DiagnosticEntry]:
-        return []
+        entries = []
+        for para in doc.paragraphs:
+            level = self.get_list_level(para)
+            if level is not None:
+                entries.append(
+                    DiagnosticEntry(
+                        text=para.text[:50],
+                        level=level,
+                        list_text=self.get_list_text(para),
+                    )
+                )
+        return entries
 
 
-def auto_select(prefer_com: bool = True) -> ListResolver:
+def auto_select(prefer_com: bool = True, docx_path: str | None = None) -> ListResolver:
     """Auto-select best available list resolver.
 
-    If prefer_com is True and Word is available, returns a COM-based resolver.
-    Otherwise returns DocxListResolver.
+    If prefer_com is True and Word is available and docx_path is provided,
+    returns a COM-based resolver. Otherwise returns DocxListResolver.
     """
-    if prefer_com:
+    if prefer_com and docx_path is not None:
         try:
             import win32com.client
 
             word = win32com.client.Dispatch("Word.Application")
             word.Quit()
-            # Return a placeholder; actual COM resolver needs docx path
-            return DocxListResolver(None)
+            return ComListResolver(docx_path)
         except Exception:
             pass
     return DocxListResolver(None)

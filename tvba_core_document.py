@@ -42,7 +42,7 @@ def apply_settings_to_document(
     if progress_cb:
         progress_cb("Detecting titles...", 0.2)
     if list_resolver is None and settings.auto_detect_include_list_paragraphs:
-        list_resolver = auto_select(prefer_com=True)
+        list_resolver = auto_select(prefer_com=True, docx_path=str(docx_path))
     auto_detect_and_format(doc, settings, list_resolver)
 
     if progress_cb:
