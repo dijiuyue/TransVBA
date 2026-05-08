@@ -179,7 +179,7 @@ class ComListResolver:
         return entries
 
 
-def auto_select(prefer_com: bool = True, docx_path: str | None = None, doc=None) -> ListResolver:
+def auto_select(prefer_com: bool = False, docx_path: str | None = None, doc=None) -> ListResolver:
     """Auto-select best available list resolver.
 
     If prefer_com is True and Word is available and docx_path is provided,
