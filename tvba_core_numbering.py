@@ -86,15 +86,31 @@ class ComListResolver:
 
     def __init__(self, docx_path: str):
         self.docx_path = docx_path
-        self.word = None
-        self.doc = None
-
-    def __enter__(self):
         import win32com.client
 
-        self.word = win32com.client.Dispatch("Word.Application")
+        # Use DispatchEx to create a new, independent Word instance.
+        # This avoids conflicts with other Word processes and is more
+        # reliable in test environments.
+        self.word = win32com.client.DispatchEx("Word.Application")
         self.word.Visible = False
         self.doc = self.word.Documents.Open(self.docx_path)
+
+    def close(self):
+        """Explicitly close Word COM document and quit the application."""
+        try:
+            if getattr(self, "doc", None):
+                self.doc.Close(SaveChanges=False)
+                self.doc = None
+        except Exception:
+            pass
+        try:
+            if getattr(self, "word", None):
+                self.word.Quit()
+                self.word = None
+        except Exception:
+            pass
+
+    def __enter__(self):
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
@@ -163,7 +179,7 @@ class ComListResolver:
         return entries
 
 
-def auto_select(prefer_com: bool = True, docx_path: str | None = None) -> ListResolver:
+def auto_select(prefer_com: bool = True, docx_path: str | None = None, doc=None) -> ListResolver:
     """Auto-select best available list resolver.
 
     If prefer_com is True and Word is available and docx_path is provided,
@@ -171,11 +187,7 @@ def auto_select(prefer_com: bool = True, docx_path: str | None = None) -> ListRe
     """
     if prefer_com and docx_path is not None:
         try:
-            import win32com.client
-
-            word = win32com.client.Dispatch("Word.Application")
-            word.Quit()
             return ComListResolver(docx_path)
         except Exception:
             pass
-    return DocxListResolver(None)
+    return DocxListResolver(doc)
