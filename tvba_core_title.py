@@ -17,6 +17,11 @@ from tvba_core_oox import (
     apply_indent_chars,
     set_before_after_lines,
 )
+from tvba_core_normalize import (
+    apply_brackets,
+    add_period_if_needed,
+    sync_number_font_with_body,
+)
 from tvba_utils import size_label_to_points, clean_para_text
 
 # Matches numeric title prefix: digits (and fullwidth digits) with dots/fullwidth dots,
@@ -95,6 +100,11 @@ def apply_title_style(paragraph, level: int, level_settings, body_settings) -> N
             spacing = etree.SubElement(pPr, f"{{{W}}}spacing")
         spacing.set(f"{{{W}}}line", str(int(level_settings.line_spacing * 240)))
         spacing.set(f"{{{W}}}lineRule", "auto")
+
+    # Normalize brackets, add period, sync number font
+    apply_brackets(paragraph, paragraph.text)
+    add_period_if_needed(paragraph)
+    sync_number_font_with_body(paragraph)
 
 
 def auto_detect_and_format(doc, settings, list_resolver=None) -> None:
