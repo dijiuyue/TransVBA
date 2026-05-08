@@ -192,10 +192,90 @@ class TvbaMainWindow(tk.Tk):
         return frame
 
     def _build_table_panel(self):
-        return self._build_placeholder_panel()
+        frame = ttk.Frame(self.detail_frame)
+        frame.columnconfigure(1, weight=1)
+
+        ttk.Label(frame, text="表格格式", font=("Microsoft YaHei", 12, "bold")).grid(row=0, column=0, columnspan=2, sticky=tk.W, pady=10)
+
+        row = 1
+        ttk.Label(frame, text="标题字体:").grid(row=row, column=0, sticky=tk.W, padx=5, pady=3)
+        self.cmb_table_title_font = ttk.Combobox(frame, values=["宋体", "黑体", "楷体", "仿宋"], state="readonly")
+        self.cmb_table_title_font.grid(row=row, column=1, sticky=tk.EW, padx=5, pady=3)
+
+        row += 1
+        ttk.Label(frame, text="标题字号:").grid(row=row, column=0, sticky=tk.W, padx=5, pady=3)
+        self.cmb_table_title_size = ttk.Combobox(frame, values=["三号", "小三", "四号", "小四", "五号"], state="readonly")
+        self.cmb_table_title_size.grid(row=row, column=1, sticky=tk.EW, padx=5, pady=3)
+
+        row += 1
+        ttk.Label(frame, text="标题加粗:").grid(row=row, column=0, sticky=tk.W, padx=5, pady=3)
+        self.var_table_title_bold = tk.BooleanVar()
+        ttk.Checkbutton(frame, variable=self.var_table_title_bold).grid(row=row, column=1, sticky=tk.W, padx=5, pady=3)
+
+        row += 1
+        ttk.Label(frame, text="标题行距(倍):").grid(row=row, column=0, sticky=tk.W, padx=5, pady=3)
+        self.spn_table_title_spacing = ttk.Spinbox(frame, from_=1.0, to=3.0, increment=0.5)
+        self.spn_table_title_spacing.grid(row=row, column=1, sticky=tk.EW, padx=5, pady=3)
+
+        row += 1
+        ttk.Label(frame, text="正文字体:").grid(row=row, column=0, sticky=tk.W, padx=5, pady=3)
+        self.cmb_table_body_font = ttk.Combobox(frame, values=["宋体", "黑体", "楷体", "仿宋"], state="readonly")
+        self.cmb_table_body_font.grid(row=row, column=1, sticky=tk.EW, padx=5, pady=3)
+
+        row += 1
+        ttk.Label(frame, text="正文字号:").grid(row=row, column=0, sticky=tk.W, padx=5, pady=3)
+        self.cmb_table_body_size = ttk.Combobox(frame, values=["三号", "小三", "四号", "小四", "五号"], state="readonly")
+        self.cmb_table_body_size.grid(row=row, column=1, sticky=tk.EW, padx=5, pady=3)
+
+        row += 1
+        ttk.Label(frame, text="线宽(pt):").grid(row=row, column=0, sticky=tk.W, padx=5, pady=3)
+        self.spn_table_line_width = ttk.Spinbox(frame, from_=0.25, to=3.0, increment=0.25)
+        self.spn_table_line_width.grid(row=row, column=1, sticky=tk.EW, padx=5, pady=3)
+
+        row += 1
+        ttk.Label(frame, text="行高(cm):").grid(row=row, column=0, sticky=tk.W, padx=5, pady=3)
+        self.spn_table_row_height = ttk.Spinbox(frame, from_=0.3, to=2.0, increment=0.1)
+        self.spn_table_row_height.grid(row=row, column=1, sticky=tk.EW, padx=5, pady=3)
+
+        row += 1
+        ttk.Label(frame, text="行距(倍):").grid(row=row, column=0, sticky=tk.W, padx=5, pady=3)
+        self.spn_table_spacing = ttk.Spinbox(frame, from_=1.0, to=3.0, increment=0.5)
+        self.spn_table_spacing.grid(row=row, column=1, sticky=tk.EW, padx=5, pady=3)
+
+        row += 1
+        ttk.Label(frame, text="自动适应窗口:").grid(row=row, column=0, sticky=tk.W, padx=5, pady=3)
+        self.var_table_auto_fit = tk.BooleanVar()
+        ttk.Checkbutton(frame, variable=self.var_table_auto_fit).grid(row=row, column=1, sticky=tk.W, padx=5, pady=3)
+
+        return frame
 
     def _build_figure_panel(self):
-        return self._build_placeholder_panel()
+        frame = ttk.Frame(self.detail_frame)
+        frame.columnconfigure(1, weight=1)
+
+        ttk.Label(frame, text="图片标题格式", font=("Microsoft YaHei", 12, "bold")).grid(row=0, column=0, columnspan=2, sticky=tk.W, pady=10)
+
+        row = 1
+        ttk.Label(frame, text="标题字体:").grid(row=row, column=0, sticky=tk.W, padx=5, pady=3)
+        self.cmb_figure_title_font = ttk.Combobox(frame, values=["宋体", "黑体", "楷体", "仿宋"], state="readonly")
+        self.cmb_figure_title_font.grid(row=row, column=1, sticky=tk.EW, padx=5, pady=3)
+
+        row += 1
+        ttk.Label(frame, text="标题字号:").grid(row=row, column=0, sticky=tk.W, padx=5, pady=3)
+        self.cmb_figure_title_size = ttk.Combobox(frame, values=["三号", "小三", "四号", "小四", "五号"], state="readonly")
+        self.cmb_figure_title_size.grid(row=row, column=1, sticky=tk.EW, padx=5, pady=3)
+
+        row += 1
+        ttk.Label(frame, text="标题加粗:").grid(row=row, column=0, sticky=tk.W, padx=5, pady=3)
+        self.var_figure_title_bold = tk.BooleanVar()
+        ttk.Checkbutton(frame, variable=self.var_figure_title_bold).grid(row=row, column=1, sticky=tk.W, padx=5, pady=3)
+
+        row += 1
+        ttk.Label(frame, text="标题行距(倍):").grid(row=row, column=0, sticky=tk.W, padx=5, pady=3)
+        self.spn_figure_title_spacing = ttk.Spinbox(frame, from_=1.0, to=3.0, increment=0.5)
+        self.spn_figure_title_spacing.grid(row=row, column=1, sticky=tk.EW, padx=5, pady=3)
+
+        return frame
 
     def _build_advanced_panel(self):
         frame = ttk.Frame(self.detail_frame)
@@ -259,6 +339,32 @@ class TvbaMainWindow(tk.Tk):
                 getattr(self, f"spn_title_{i}_spacing").set(str(title.line_spacing))
                 getattr(self, f"cmb_title_{i}_align").set(title.alignment)
 
+        # Table
+        if hasattr(self, "cmb_table_title_font"):
+            self.cmb_table_title_font.set(s.table.title_font)
+            self.cmb_table_title_size.set(s.table.title_size)
+            self.var_table_title_bold.set(s.table.title_bold)
+            self.spn_table_title_spacing.set(str(s.table.title_spacing))
+            self.cmb_table_body_font.set(s.table.body_font)
+            self.cmb_table_body_size.set(s.table.body_size)
+            self.spn_table_line_width.set(str(s.table.line_width_pt))
+            self.spn_table_row_height.set(str(s.table.row_height_cm))
+            self.spn_table_spacing.set(str(s.table.spacing))
+            self.var_table_auto_fit.set(s.table.auto_fit_window)
+
+        # Figure
+        if hasattr(self, "cmb_figure_title_font"):
+            self.cmb_figure_title_font.set(s.figure.title_font)
+            self.cmb_figure_title_size.set(s.figure.title_size)
+            self.var_figure_title_bold.set(s.figure.title_bold)
+            self.spn_figure_title_spacing.set(str(s.figure.title_spacing))
+
+        # Advanced
+        if hasattr(self, "var_auto_detect"):
+            self.var_auto_detect.set(s.auto_detect_numeric_titles)
+            self.var_include_list.set(s.auto_detect_include_list_paragraphs)
+            self.chk_remember.set(s.remember_settings)
+
     def _on_open(self):
         path = filedialog.askopenfilename(filetypes=[("Word documents", "*.docx")])
         if path:
@@ -314,3 +420,40 @@ class TvbaMainWindow(tk.Tk):
             self.controller.update_setting("body.size", self.cmb_body_size.get())
             self.controller.update_setting("body.spacing", float(self.spn_body_spacing.get()))
             self.controller.update_setting("body.alignment", self.cmb_body_align.get())
+
+        # Sync title settings (all 5 levels)
+        for i in range(1, 6):
+            if hasattr(self, f"cmb_title_{i}_font"):
+                self.controller.update_setting(f"titles.{i - 1}.font", getattr(self, f"cmb_title_{i}_font").get())
+                self.controller.update_setting(f"titles.{i - 1}.size", getattr(self, f"cmb_title_{i}_size").get())
+                self.controller.update_setting(f"titles.{i - 1}.bold", getattr(self, f"var_title_{i}_bold").get())
+                self.controller.update_setting(f"titles.{i - 1}.before_lines", float(getattr(self, f"spn_title_{i}_before").get()))
+                self.controller.update_setting(f"titles.{i - 1}.after_lines", float(getattr(self, f"spn_title_{i}_after").get()))
+                self.controller.update_setting(f"titles.{i - 1}.line_spacing", float(getattr(self, f"spn_title_{i}_spacing").get()))
+                self.controller.update_setting(f"titles.{i - 1}.alignment", getattr(self, f"cmb_title_{i}_align").get())
+
+        # Sync table settings
+        if hasattr(self, "cmb_table_title_font"):
+            self.controller.update_setting("table.title_font", self.cmb_table_title_font.get())
+            self.controller.update_setting("table.title_size", self.cmb_table_title_size.get())
+            self.controller.update_setting("table.title_bold", self.var_table_title_bold.get())
+            self.controller.update_setting("table.title_spacing", float(self.spn_table_title_spacing.get()))
+            self.controller.update_setting("table.body_font", self.cmb_table_body_font.get())
+            self.controller.update_setting("table.body_size", self.cmb_table_body_size.get())
+            self.controller.update_setting("table.line_width_pt", float(self.spn_table_line_width.get()))
+            self.controller.update_setting("table.row_height_cm", float(self.spn_table_row_height.get()))
+            self.controller.update_setting("table.spacing", float(self.spn_table_spacing.get()))
+            self.controller.update_setting("table.auto_fit_window", self.var_table_auto_fit.get())
+
+        # Sync figure settings
+        if hasattr(self, "cmb_figure_title_font"):
+            self.controller.update_setting("figure.title_font", self.cmb_figure_title_font.get())
+            self.controller.update_setting("figure.title_size", self.cmb_figure_title_size.get())
+            self.controller.update_setting("figure.title_bold", self.var_figure_title_bold.get())
+            self.controller.update_setting("figure.title_spacing", float(self.spn_figure_title_spacing.get()))
+
+        # Sync advanced settings
+        if hasattr(self, "var_auto_detect"):
+            self.controller.update_setting("auto_detect_numeric_titles", self.var_auto_detect.get())
+            self.controller.update_setting("auto_detect_include_list_paragraphs", self.var_include_list.get())
+            self.controller.update_setting("remember_settings", self.chk_remember.get())

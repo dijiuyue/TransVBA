@@ -68,3 +68,43 @@ class TestTvbaController:
         ctrl.update_setting("body.font", "黑体")
         ctrl.reset_to_defaults()
         assert ctrl.settings.body.font == "宋体"
+
+    def test_update_setting_table(self):
+        repo = SettingsRepository()
+        applier = FakeDocumentApplier()
+        ctrl = TvbaController(repo, applier)
+        result = ctrl.update_setting("table.title_font", "楷体")
+        assert result.valid is True
+        assert ctrl.settings.table.title_font == "楷体"
+
+    def test_update_setting_figure(self):
+        repo = SettingsRepository()
+        applier = FakeDocumentApplier()
+        ctrl = TvbaController(repo, applier)
+        result = ctrl.update_setting("figure.title_bold", False)
+        assert result.valid is True
+        assert ctrl.settings.figure.title_bold is False
+
+    def test_update_setting_auto_detect_numeric_titles(self):
+        repo = SettingsRepository()
+        applier = FakeDocumentApplier()
+        ctrl = TvbaController(repo, applier)
+        result = ctrl.update_setting("auto_detect_numeric_titles", False)
+        assert result.valid is True
+        assert ctrl.settings.auto_detect_numeric_titles is False
+
+    def test_update_setting_auto_detect_include_list_paragraphs(self):
+        repo = SettingsRepository()
+        applier = FakeDocumentApplier()
+        ctrl = TvbaController(repo, applier)
+        result = ctrl.update_setting("auto_detect_include_list_paragraphs", False)
+        assert result.valid is True
+        assert ctrl.settings.auto_detect_include_list_paragraphs is False
+
+    def test_update_setting_remember_settings(self):
+        repo = SettingsRepository()
+        applier = FakeDocumentApplier()
+        ctrl = TvbaController(repo, applier)
+        result = ctrl.update_setting("remember_settings", False)
+        assert result.valid is True
+        assert ctrl.settings.remember_settings is False

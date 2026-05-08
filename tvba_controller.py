@@ -79,6 +79,31 @@ class TvbaController:
                 )
                 return ValidationResult(valid=True)
 
+            elif parts[0] == "table" and len(parts) == 2:
+                attr = parts[1]
+                new_table = replace(self._settings.table, **{attr: value})
+                self._settings = replace(
+                    self._settings,
+                    table=new_table,
+                )
+                return ValidationResult(valid=True)
+
+            elif parts[0] == "figure" and len(parts) == 2:
+                attr = parts[1]
+                new_figure = replace(self._settings.figure, **{attr: value})
+                self._settings = replace(
+                    self._settings,
+                    figure=new_figure,
+                )
+                return ValidationResult(valid=True)
+
+            elif parts[0] in ("auto_detect_numeric_titles", "auto_detect_include_list_paragraphs", "remember_settings") and len(parts) == 1:
+                self._settings = replace(
+                    self._settings,
+                    **{parts[0]: value},
+                )
+                return ValidationResult(valid=True)
+
             else:
                 return ValidationResult(valid=False, message=f"Unknown path: {path}")
         except (AttributeError, IndexError, TypeError) as e:
