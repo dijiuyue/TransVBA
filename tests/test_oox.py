@@ -10,6 +10,10 @@ from tvba_core_oox import (
     set_outline_level,
     apply_indent_chars,
     set_before_after_lines,
+    set_table_layout_window,
+    set_table_layout_content,
+    set_table_borders,
+    set_row_height_at_least,
 )
 
 NSMAP = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}
@@ -112,3 +116,52 @@ class TestSetBeforeAfterLines:
         assert spacing is not None
         assert spacing.get("{http://schemas.openxmlformats.org/wordprocessingml/2006/main}beforeLines") == "50"
         assert spacing.get("{http://schemas.openxmlformats.org/wordprocessingml/2006/main}afterLines") == "50"
+
+class TestTableLayout:
+    def test_set_window_layout(self):
+        doc = Document()
+        table = doc.add_table(rows=1, cols=2)
+        set_table_layout_window(table)
+        tblPr = table._element.find(".//w:tblPr", NSMAP)
+        assert tblPr is not None
+        layout = tblPr.find("w:tblLayout", NSMAP)
+        assert layout is not None
+        assert layout.get("{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val") == "autofit"
+
+    def test_set_content_layout(self):
+        doc = Document()
+        table = doc.add_table(rows=1, cols=2)
+        set_table_layout_content(table)
+        tblPr = table._element.find(".//w:tblPr", NSMAP)
+        layout = tblPr.find("w:tblLayout", NSMAP)
+        assert layout is not None
+        assert layout.get("{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val") == "fixed"
+
+class TestTableBorders:
+    def test_sets_all_borders(self):
+        doc = Document()
+        table = doc.add_table(rows=1, cols=2)
+        set_table_borders(table, line_width_pt=1.5)
+        tblPr = table._element.find(".//w:tblPr", NSMAP)
+        borders = tblPr.find("w:tblBorders", NSMAP)
+        assert borders is not None
+        for side in ("top", "left", "bottom", "right", "insideH", "insideV"):
+            border = borders.find(f"w:{side}", NSMAP)
+            assert border is not None, f"Missing {side} border"
+            # 1.5 pt = 30 half-points
+            assert border.get("{http://schemas.openxmlformats.org/wordprocessingml/2006/main}sz") == "30"
+            assert border.get("{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val") == "single"
+
+class TestRowHeight:
+    def test_sets_row_height_at_least(self):
+        doc = Document()
+        table = doc.add_table(rows=1, cols=2)
+        row = table.rows[0]
+        set_row_height_at_least(row, height_cm=0.7)
+        trPr = row._tr.find("w:trPr", NSMAP)
+        assert trPr is not None
+        trHeight = trPr.find("w:trHeight", NSMAP)
+        assert trHeight is not None
+        # 0.7 cm = 0.7 * 28.3465 pt * 20 twips/pt = ~397 twips
+        assert trHeight.get("{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val") is not None
+        assert trHeight.get("{http://schemas.openxmlformats.org/wordprocessingml/2006/main}hRule") == "atLeast"
