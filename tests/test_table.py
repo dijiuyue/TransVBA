@@ -11,17 +11,38 @@ from tvba_core_table import (
 from tvba_settings import TableSettings
 
 class TestIsTableCaptionLine:
-    def test_starts_with_biao(self):
+    def test_biao_with_number_pattern(self):
         assert is_table_caption_line("表 1.1-1 示例表格") is True
 
+    def test_biao_no_space(self):
+        assert is_table_caption_line("表1.1-1 示例表格") is True
+
+    def test_biao_simple_number(self):
+        assert is_table_caption_line("表 1-1 示例表格") is True
+
     def test_starts_with_table(self):
-        assert is_table_caption_line("Table 1 Example") is True
+        assert is_table_caption_line("Table 1-1 Example") is True
+
+    def test_table_with_dot_number(self):
+        assert is_table_caption_line("Table 1.1-1 Example") is True
 
     def test_no_prefix(self):
         assert is_table_caption_line("示例表格") is False
 
     def test_case_insensitive(self):
-        assert is_table_caption_line("TABLE 1 Example") is True
+        assert is_table_caption_line("TABLE 1-1 Example") is True
+
+    def test_no_dash_fails(self):
+        assert is_table_caption_line("表 1 示例表格") is False
+
+    def test_no_caption_text_fails(self):
+        assert is_table_caption_line("表 1-1") is False
+
+    def test_only_prefix_fails(self):
+        assert is_table_caption_line("表 ") is False
+
+    def test_table_without_number_pattern_fails(self):
+        assert is_table_caption_line("Table Example") is False
 
 class TestApplyTableCaption:
     def test_applies_font_and_bold(self):

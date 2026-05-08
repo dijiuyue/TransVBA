@@ -5,14 +5,22 @@ Corresponds to VBA FormatModule.bas:
   - IsFigureCaptionLine
 """
 from tvba_core_oox import set_far_east_font, set_ascii_font, set_before_after_lines
+import re
+
 from tvba_utils import clean_para_text, size_label_to_points
 from docx.shared import Pt
+
+# VBA pattern: ^图\s*\d+(\.\d+)*-\d+[\t ]+.+$
+_FIGURE_CAPTION_RE = re.compile(
+    r"^(?:图|figure)\s*\d+(?:\.\d+)*-\d+[\t ]+.+$",
+    re.IGNORECASE,
+)
 
 
 def is_figure_caption_line(text: str) -> bool:
     """Check if text is a figure caption."""
-    text = clean_para_text(text).lower()
-    return text.startswith("图 ") or text.startswith("fig ") or text.startswith("figure ")
+    text = clean_para_text(text)
+    return bool(_FIGURE_CAPTION_RE.match(text))
 
 
 def apply_figure_caption(para, settings) -> None:

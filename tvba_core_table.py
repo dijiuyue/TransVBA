@@ -17,14 +17,22 @@ from tvba_core_oox import (
     apply_indent_chars,
     set_before_after_lines,
 )
+import re
+
 from tvba_utils import clean_para_text, size_label_to_points, cm_to_points
 from docx.shared import Pt
+
+# VBA pattern: ^表\s*\d+(\.\d+)*-\d+[\t ]+.+$
+_TABLE_CAPTION_RE = re.compile(
+    r"^(?:表|table)\s*\d+(?:\.\d+)*-\d+[\t ]+.+$",
+    re.IGNORECASE,
+)
 
 
 def is_table_caption_line(text: str) -> bool:
     """Check if text is a table caption."""
-    text = clean_para_text(text).lower()
-    return text.startswith("表 ") or text.startswith("table ")
+    text = clean_para_text(text)
+    return bool(_TABLE_CAPTION_RE.match(text))
 
 
 def find_table_caption(table, doc, max_up_paragraphs: int = 10):

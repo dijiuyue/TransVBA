@@ -10,17 +10,41 @@ from tvba_settings import FigureSettings
 
 
 class TestIsFigureCaptionLine:
-    def test_starts_with_figure(self):
+    def test_starts_with_tu(self):
         assert is_figure_caption_line("图 1-1 示例图片") is True
 
-    def test_starts_with_fig(self):
-        assert is_figure_caption_line("Fig 1 Example") is True
+    def test_tu_no_space(self):
+        assert is_figure_caption_line("图1.1-1 示例图片") is True
+
+    def test_tu_simple_number(self):
+        assert is_figure_caption_line("图 1-1 示例图片") is True
+
+    def test_starts_with_figure(self):
+        assert is_figure_caption_line("Figure 1-1 Example") is True
+
+    def test_figure_with_dot_number(self):
+        assert is_figure_caption_line("Figure 1.1-1 Example") is True
 
     def test_no_prefix(self):
         assert is_figure_caption_line("示例图片") is False
 
     def test_case_insensitive(self):
-        assert is_figure_caption_line("FIGURE 1 Example") is True
+        assert is_figure_caption_line("FIGURE 1-1 Example") is True
+
+    def test_no_dash_fails(self):
+        assert is_figure_caption_line("图 1 示例图片") is False
+
+    def test_no_caption_text_fails(self):
+        assert is_figure_caption_line("图 1-1") is False
+
+    def test_only_prefix_fails(self):
+        assert is_figure_caption_line("图 ") is False
+
+    def test_fig_prefix_fails(self):
+        assert is_figure_caption_line("Fig 1 Example") is False
+
+    def test_figure_without_number_pattern_fails(self):
+        assert is_figure_caption_line("Figure Example") is False
 
 
 class TestApplyFigureCaption:
