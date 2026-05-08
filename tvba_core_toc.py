@@ -10,9 +10,14 @@ Corresponds to VBA FormatModule.bas:
   - ApplyDirectoryTitleStyle
   - ApplyDirectoryStyle
 """
+import re
+
 from tvba_core_oox import set_far_east_font, set_ascii_font
 from tvba_utils import clean_para_text, size_label_to_points
 from docx.shared import Pt
+
+# Matches numeric prefix like "1", "1.1", "1.1.2" (halfwidth or fullwidth digits/dots)
+_TOC_NUMBER_RE = re.compile(r"^([\d０-９]+([\.．][\d０-９]+){0,6})[ \t]*")
 
 
 def is_toc_entry_line(text: str) -> bool:
@@ -40,18 +45,46 @@ def is_toc_title_line(text: str) -> bool:
 
 
 def is_toc_paragraph(para) -> bool:
-    """Check if paragraph is part of TOC (entry or title)."""
+    """Check if paragraph is part of TOC (entry or title).
+
+    Returns True if the text looks like a TOC entry/title, OR if the
+    paragraph's style name contains "TOC" (case-insensitive).
+    """
     text = clean_para_text(para.text)
-    return is_toc_entry_line(text) or is_toc_title_line(text)
+    if is_toc_entry_line(text) or is_toc_title_line(text):
+        return True
+    # Check paragraph style name for TOC styles (TOC1, TOC2, TOC3, etc.)
+    style_name = ""
+    if para.style and para.style.name:
+        style_name = para.style.name
+    return "toc" in style_name.lower()
 
 
 def identify_toc_level(text: str) -> int:
-    """Identify TOC entry level from leading whitespace."""
-    # Do NOT strip leading spaces — they indicate indent level
+    """Identify TOC entry level from number prefix or leading whitespace.
+
+    Priority:
+      1. Extract number prefix (e.g. "1", "1.1", "1.1.2") and count dots.
+      2. Fall back to leading space counting if no number pattern matches.
+    """
+    # Priority 1: regex-based number prefix detection
+    m = _TOC_NUMBER_RE.match(text)
+    if m:
+        num_part = m.group(1)
+        # Normalize fullwidth digits/dots to halfwidth
+        for i in range(10):
+            num_part = num_part.replace(chr(0xFF10 + i), str(i))
+        num_part = num_part.replace("．", ".")
+        dot_count = num_part.count(".")
+        level = dot_count + 1
+        if 1 <= level <= 3:
+            return level
+        return 0
+
+    # Priority 2: fallback to leading space counting
     text = text.rstrip().replace("\r", "").replace("\n", "")
     if not text.startswith(" "):
         return 1
-    # Count leading spaces
     stripped = text.lstrip(" ")
     spaces = len(text) - len(stripped)
     if spaces == 2:
