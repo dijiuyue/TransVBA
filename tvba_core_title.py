@@ -99,7 +99,12 @@ def apply_title_style(paragraph, level: int, level_settings, body_settings) -> N
 
 def auto_detect_and_format(doc, settings, list_resolver=None) -> None:
     """Auto-detect numeric titles and apply title formatting."""
+    from tvba_core_toc import is_toc_paragraph
+
     for para in doc.paragraphs:
+        if is_toc_paragraph(para):
+            continue
+
         text = clean_para_text(para.text)
         if not text:
             continue

@@ -53,13 +53,19 @@ def apply_settings_to_document(
 
         # Check if paragraph has outline level set (title)
         pPr = para._element.find(".//w:pPr", {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"})
-        is_title = False
+        outline_level = None
         if pPr is not None:
             outline = pPr.find("w:outlineLvl", {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"})
             if outline is not None:
-                is_title = True
+                outline_level = int(outline.get("{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val", "9"))
 
-        if not is_title:
+        if outline_level is not None and 0 <= outline_level <= 4:
+            # Title paragraph (Word levels 1-5) — apply title formatting
+            from tvba_core_title import apply_title_style
+            level = outline_level + 1  # Convert 0-4 to 1-5
+            apply_title_style(para, level, settings.titles[level - 1], settings.body)
+        else:
+            # Body text (outline_level == 9 or no outline) — apply body formatting
             apply_paragraph(para, settings.body)
 
     if progress_cb:
