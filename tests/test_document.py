@@ -7,7 +7,7 @@ from docx import Document
 from docx.shared import Pt
 
 from tvba_core_document import apply_settings_to_document
-from tvba_settings import FormatSettings, BodySettings
+from tvba_settings import FormatSettings, BodySettings, FigureSettings, TableSettings
 
 
 def _get_run_eastasia_font(run):
@@ -276,3 +276,69 @@ class TestApplySettingsToDocument:
             )
             assert outline is not None, "Heading 2 style should result in outline level"
             assert outline.get("{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val") == "1"
+
+    def test_figure_caption_has_no_indent(self):
+        """Figure captions should not inherit body first-line indent."""
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "test.docx"
+            doc = Document()
+            doc.add_paragraph("图2.2.11-1  管道经过南朗遗物点位置示意图")
+            doc.save(path)
+
+            settings = FormatSettings(
+                body=BodySettings(
+                    font="宋体", size="小四", spacing=1.5,
+                    special_indent="首行缩进", special_indent_chars=2.0,
+                ),
+                figure=FigureSettings(
+                    title_font="黑体", title_size="小四", title_bold=True, title_spacing=1.5,
+                ),
+            )
+            out = apply_settings_to_document(path, settings)
+
+            result = Document(out)
+            para = result.paragraphs[0]
+            pPr = para._element.find(
+                ".//w:pPr",
+                {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"},
+            )
+            ind = pPr.find("w:ind", {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"})
+            if ind is not None:
+                first_line = ind.get("{http://schemas.openxmlformats.org/wordprocessingml/2006/main}firstLine")
+                hanging = ind.get("{http://schemas.openxmlformats.org/wordprocessingml/2006/main}hanging")
+                assert first_line is None, f"Figure caption should not have first-line indent, got {first_line}"
+                assert hanging is None, f"Figure caption should not have hanging indent, got {hanging}"
+
+    def test_table_caption_has_no_indent(self):
+        """Table captions should not inherit body first-line indent."""
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "test.docx"
+            doc = Document()
+            doc.add_paragraph("表2.2.9-1  沿线经过环境敏感点统计表")
+            doc.add_table(rows=2, cols=2)  # Table needed for caption to be found
+            doc.save(path)
+
+            settings = FormatSettings(
+                body=BodySettings(
+                    font="宋体", size="小四", spacing=1.5,
+                    special_indent="首行缩进", special_indent_chars=2.0,
+                ),
+                table=TableSettings(
+                    title_font="黑体", title_size="小四", title_bold=True, title_spacing=1.5,
+                ),
+            )
+            out = apply_settings_to_document(path, settings)
+
+            result = Document(out)
+            para = result.paragraphs[0]
+            pPr = para._element.find(
+                ".//w:pPr",
+                {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"},
+            )
+            ind = pPr.find("w:ind", {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"})
+            if ind is not None:
+                first_line = ind.get("{http://schemas.openxmlformats.org/wordprocessingml/2006/main}firstLine")
+                hanging = ind.get("{http://schemas.openxmlformats.org/wordprocessingml/2006/main}hanging")
+                assert first_line is None, f"Table caption should not have first-line indent, got {first_line}"
+                assert hanging is None, f"Table caption should not have hanging indent, got {hanging}"
+

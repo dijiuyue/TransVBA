@@ -4,14 +4,15 @@ Corresponds to VBA FormatModule.bas:
   - RefreshFigureCaptions
   - IsFigureCaptionLine
 """
-from tvba_core_oox import set_far_east_font, set_ascii_font, set_run_font_size, set_before_after_lines
+from tvba_core_oox import set_far_east_font, set_ascii_font, set_run_font_size, set_before_after_lines, apply_indent_chars
 import re
 
 from tvba_utils import clean_para_text, size_label_to_points
 
 # VBA pattern: ^图\s*\d+(\.\d+)*-\d+[\t ]+.+$
+# Use \s+ to match any whitespace (space, tab, nbsp, fullwidth space, etc.)
 _FIGURE_CAPTION_RE = re.compile(
-    r"^(?:图|figure)\s*\d+(?:\.\d+)*-\d+[\t ]+.+$",
+    r"^(?:图|figure)\s*\d+(?:\.\d+)*-\d+\s+.+$",
     re.IGNORECASE,
 )
 
@@ -31,6 +32,15 @@ def apply_figure_caption(para, settings) -> None:
         run.font.bold = settings.title_bold
 
     para.alignment = 1  # Center
+
+    # Clear any inherited indentation (body first-line/hanging indent)
+    apply_indent_chars(
+        para.paragraph_format,
+        left_chars=0.0,
+        right_chars=0.0,
+        special_kind="无",
+        special_chars=0.0,
+    )
 
     set_before_after_lines(
         para.paragraph_format,

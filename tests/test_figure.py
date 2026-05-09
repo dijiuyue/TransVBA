@@ -46,6 +46,14 @@ class TestIsFigureCaptionLine:
     def test_figure_without_number_pattern_fails(self):
         assert is_figure_caption_line("Figure Example") is False
 
+    def test_fullwidth_space_separator(self):
+        """Full-width space (U+3000) between number and text should match."""
+        assert is_figure_caption_line("图2.2.11-1　管道经过南朗遗物点位置示意图") is True
+
+    def test_nonbreaking_space_separator(self):
+        """Non-breaking space (U+00A0) between number and text should match."""
+        assert is_figure_caption_line("图2.2.11-1\xa0管道经过南朗遗物点位置示意图") is True
+
 
 class TestApplyFigureCaption:
     def test_applies_font_and_bold(self):

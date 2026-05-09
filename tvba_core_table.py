@@ -23,8 +23,9 @@ import re
 from tvba_utils import clean_para_text, size_label_to_points, cm_to_points
 
 # VBA pattern: ^表\s*\d+(\.\d+)*-\d+[\t ]+.+$
+# Use \s+ to match any whitespace (space, tab, nbsp, fullwidth space, etc.)
 _TABLE_CAPTION_RE = re.compile(
-    r"^(?:表|table)\s*\d+(?:\.\d+)*-\d+[\t ]+.+$",
+    r"^(?:表|table)\s*\d+(?:\.\d+)*-\d+\s+.+$",
     re.IGNORECASE,
 )
 
@@ -100,6 +101,15 @@ def apply_table_caption(para, settings) -> None:
         run.font.bold = settings.title_bold
 
     para.alignment = 1  # Center alignment for captions
+
+    # Clear any inherited indentation (body first-line/hanging indent)
+    apply_indent_chars(
+        para.paragraph_format,
+        left_chars=0.0,
+        right_chars=0.0,
+        special_kind="无",
+        special_chars=0.0,
+    )
 
     set_before_after_lines(
         para.paragraph_format,

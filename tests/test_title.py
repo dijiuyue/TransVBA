@@ -156,3 +156,27 @@ class TestAutoDetectAndFormat:
         pPr = para._element.find(".//w:pPr", {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"})
         outline = pPr.find("w:outlineLvl", {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"})
         assert outline.get("{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val") == "0"
+
+    def test_list_paragraph_not_treated_as_title(self):
+        """Body list items like '1）第一项' should NOT be treated as titles."""
+        from lxml import etree
+        from tvba_core_numbering import DocxListResolver
+
+        doc = Document()
+        para = doc.add_paragraph("1）第一项")
+        # Simulate Word multilevel list formatting (w:numPr/w:ilvl=0)
+        W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+        pPr = para._element.find(f"{{{W}}}pPr")
+        if pPr is None:
+            pPr = etree.SubElement(para._element, f"{{{W}}}pPr")
+        numPr = etree.SubElement(pPr, f"{{{W}}}numPr")
+        ilvl = etree.SubElement(numPr, f"{{{W}}}ilvl")
+        ilvl.set(f"{{{W}}}val", "0")
+
+        settings = FormatSettings()
+        resolver = DocxListResolver(doc)
+        auto_detect_and_format(doc, settings, resolver)
+
+        # Should NOT have outline level set
+        outline = pPr.find(f"{{{W}}}outlineLvl")
+        assert outline is None, f"List paragraph '1）第一项' should not be treated as title, got outline={outline}"

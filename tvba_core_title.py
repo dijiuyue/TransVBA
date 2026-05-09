@@ -126,17 +126,26 @@ def auto_detect_and_format(doc, settings, list_resolver=None) -> None:
         if not text:
             continue
 
-        level = 0
+        # Priority 1: Numeric title text detection
+        level = identify_numeric_title_level(text)
 
-        # Priority 1: Multi-level list resolver (COM or docx)
-        if list_resolver is not None:
+        # Priority 2: Multi-level list resolver (COM or docx) as fallback.
+        # Only trust list resolver when it can prove the paragraph is a
+        # heading (via list text for COM) to avoid treating body list
+        # items (e.g. "1）第一项") as titles.
+        if level == 0 and list_resolver is not None:
             list_level = list_resolver.get_list_level(para)
             if list_level is not None and 1 <= list_level <= 5:
-                level = list_level
-
-        # Priority 2: Numeric title text detection
-        if level == 0:
-            level = identify_numeric_title_level(text)
+                # COM resolver: verify via rendered list text
+                if hasattr(list_resolver, 'get_list_text'):
+                    list_text = list_resolver.get_list_text(para)
+                    if list_text:
+                        normalized = normalize_number_string(list_text)
+                        if identify_level_from_number(normalized) > 0:
+                            level = list_level
+                # Docx resolver: cannot reliably distinguish heading lists
+                # from body lists, so skip to avoid false positives.
+                # Text already matched above if it looks like a title.
 
         if 1 <= level <= 5:
             apply_title_style(

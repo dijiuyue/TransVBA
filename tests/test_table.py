@@ -44,6 +44,14 @@ class TestIsTableCaptionLine:
     def test_table_without_number_pattern_fails(self):
         assert is_table_caption_line("Table Example") is False
 
+    def test_fullwidth_space_separator(self):
+        """Full-width space (U+3000) between number and text should match."""
+        assert is_table_caption_line("表2.2.9-1　沿线经过环境敏感点统计表") is True
+
+    def test_nonbreaking_space_separator(self):
+        """Non-breaking space (U+00A0) between number and text should match."""
+        assert is_table_caption_line("表2.2.9-1\xa0沿线经过环境敏感点统计表") is True
+
 class TestApplyTableCaption:
     def test_applies_font_and_bold(self):
         doc = Document()

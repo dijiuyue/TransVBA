@@ -153,8 +153,13 @@ def apply_indent_chars(
 
     if left_chars:
         ind.set(_ns("left"), str(int(left_chars * twips_per_char)))
+    elif _ns("left") in ind.attrib:
+        del ind.attrib[_ns("left")]
+
     if right_chars:
         ind.set(_ns("right"), str(int(right_chars * twips_per_char)))
+    elif _ns("right") in ind.attrib:
+        del ind.attrib[_ns("right")]
 
     # Clear existing special indent attrs
     for attr in (_ns("firstLine"), _ns("hanging")):
