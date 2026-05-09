@@ -86,6 +86,48 @@ def set_outline_level(paragraph, level_zero_indexed: int) -> None:
     outline.set(_ns("val"), str(level_zero_indexed))
 
 
+def get_effective_outline_level(paragraph, styles=None) -> int | None:
+    """Return the effective outline level (0-8) for a paragraph.
+
+    Checks the paragraph's direct w:pPr/w:outlineLvl first, then falls back
+    to the paragraph style (and its basedOn chain). Returns None if no
+    outline level is found.
+    """
+    # 1. Direct paragraph-level outline
+    pPr = paragraph._element.find(_ns("pPr"))
+    if pPr is not None:
+        outline = pPr.find(_ns("outlineLvl"))
+        if outline is not None:
+            val = outline.get(_ns("val"))
+            if val is not None:
+                return int(val)
+
+    # 2. Style-level outline (follow basedOn chain)
+    style = paragraph.style
+    while style is not None:
+        style_pPr = style.element.find(_ns("pPr"))
+        if style_pPr is not None:
+            outline = style_pPr.find(_ns("outlineLvl"))
+            if outline is not None:
+                val = outline.get(_ns("val"))
+                if val is not None:
+                    return int(val)
+
+        # Follow basedOn chain
+        basedOn = style.element.find(_ns("basedOn"))
+        if basedOn is None:
+            break
+        based_on_val = basedOn.get(_ns("val"))
+        if based_on_val is None or styles is None:
+            break
+        try:
+            style = styles[based_on_val]
+        except KeyError:
+            break
+
+    return None
+
+
 def apply_indent_chars(
     paragraph_format,
     *,

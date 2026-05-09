@@ -16,6 +16,7 @@ from tvba_core_figure import refresh_all as refresh_figures
 from tvba_core_convert import ensure_docx
 from tvba_core_normalize import unify_ascii_font
 from tvba_core_numbering import auto_select
+from tvba_core_oox import get_effective_outline_level
 
 
 def apply_settings_to_document(
@@ -55,13 +56,8 @@ def apply_settings_to_document(
         if is_toc_paragraph(para):
             continue
 
-        # Check if paragraph has outline level set (title)
-        pPr = para._element.find(".//w:pPr", {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"})
-        outline_level = None
-        if pPr is not None:
-            outline = pPr.find("w:outlineLvl", {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"})
-            if outline is not None:
-                outline_level = int(outline.get("{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val", "9"))
+        # Check effective outline level (direct or from style)
+        outline_level = get_effective_outline_level(para, styles=doc.styles)
 
         if outline_level is not None and 0 <= outline_level <= 4:
             # Title paragraph (Word levels 1-5) — apply title formatting
@@ -69,7 +65,7 @@ def apply_settings_to_document(
             level = outline_level + 1  # Convert 0-4 to 1-5
             apply_title_style(para, level, settings.titles[level - 1], settings.body)
         else:
-            # Body text (outline_level == 9 or no outline) — apply body formatting
+            # Body text (no outline or level > 4) — apply body formatting
             apply_paragraph(para, settings.body)
 
     if progress_cb:

@@ -14,6 +14,7 @@ from tvba_core_oox import (
     set_ascii_font,
     set_run_font_size,
     set_outline_level,
+    get_effective_outline_level,
     apply_indent_chars,
     set_before_after_lines,
 )
@@ -116,11 +117,10 @@ def auto_detect_and_format(doc, settings, list_resolver=None) -> None:
             continue
 
         # Skip paragraphs that already have an outline level set by the user
-        pPr = para._element.find(".//w:pPr", {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"})
-        if pPr is not None:
-            existing_outline = pPr.find("w:outlineLvl", {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"})
-            if existing_outline is not None:
-                continue
+        # (either directly on the paragraph or inherited from its style)
+        existing_outline = get_effective_outline_level(para, styles=doc.styles)
+        if existing_outline is not None:
+            continue
 
         text = clean_para_text(para.text)
         if not text:

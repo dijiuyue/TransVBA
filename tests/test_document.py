@@ -223,3 +223,56 @@ class TestApplySettingsToDocument:
             )
             assert outline is not None
             assert outline.get("{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val") == "2"
+
+    def test_heading_style_recognized_as_title(self):
+        """Paragraphs with Word heading styles (Heading 1, Heading 2, etc.)
+        should be recognized and formatted as titles."""
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "test.docx"
+            doc = Document()
+            para = doc.add_paragraph("一级标题")
+            para.style = doc.styles["Heading 1"]
+            doc.save(path)
+
+            settings = FormatSettings(auto_detect_numeric_titles=False)
+            out = apply_settings_to_document(path, settings)
+
+            result = Document(out)
+            para = result.paragraphs[0]
+            # Should have outline level 0 (from Heading 1 style)
+            pPr = para._element.find(
+                ".//w:pPr",
+                {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"},
+            )
+            outline = pPr.find(
+                "w:outlineLvl",
+                {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"},
+            )
+            assert outline is not None, "Heading 1 style should result in outline level"
+            assert outline.get("{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val") == "0"
+
+    def test_heading_2_style_formatted_as_level_2(self):
+        """Paragraphs with Heading 2 style should be formatted as level 2 title."""
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "test.docx"
+            doc = Document()
+            para = doc.add_paragraph("二级标题")
+            para.style = doc.styles["Heading 2"]
+            doc.save(path)
+
+            settings = FormatSettings(auto_detect_numeric_titles=False)
+            out = apply_settings_to_document(path, settings)
+
+            result = Document(out)
+            para = result.paragraphs[0]
+            # Should have outline level 1 (from Heading 2 style, 0-indexed)
+            pPr = para._element.find(
+                ".//w:pPr",
+                {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"},
+            )
+            outline = pPr.find(
+                "w:outlineLvl",
+                {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"},
+            )
+            assert outline is not None, "Heading 2 style should result in outline level"
+            assert outline.get("{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val") == "1"
