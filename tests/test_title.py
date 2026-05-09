@@ -142,3 +142,17 @@ class TestAutoDetectAndFormat:
             outline3 = pPr3.find("w:outlineLvl", {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"})
             assert outline3 is None
         # If pPr3 is None, body paragraph has no formatting at all — also correct
+
+    def test_does_not_overwrite_existing_outline_level(self):
+        """Paragraphs that already have an outline level should keep it."""
+        from tvba_core_oox import set_outline_level
+        doc = Document()
+        para = doc.add_paragraph("1.1 研究方法")
+        # User manually set this as a level-1 title (outline level 0) in Word
+        set_outline_level(para, 0)
+        settings = FormatSettings()
+        auto_detect_and_format(doc, settings)
+        # Outline level should remain 0, not be overwritten to 1 (level 2)
+        pPr = para._element.find(".//w:pPr", {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"})
+        outline = pPr.find("w:outlineLvl", {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"})
+        assert outline.get("{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val") == "0"
