@@ -13,6 +13,7 @@ from tvba_core_title import auto_detect_and_format
 from tvba_core_toc import is_toc_paragraph, refresh_toc
 from tvba_core_table import refresh_all as refresh_tables
 from tvba_core_figure import refresh_all as refresh_figures
+from tvba_core_convert import ensure_docx
 from tvba_core_normalize import unify_ascii_font
 from tvba_core_numbering import auto_select
 
@@ -31,6 +32,8 @@ def apply_settings_to_document(
     """
     if progress_cb:
         progress_cb("Loading document...", 0.0)
+
+    docx_path = ensure_docx(docx_path)
 
     doc = Document(str(docx_path))
 

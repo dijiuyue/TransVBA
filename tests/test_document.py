@@ -1,5 +1,7 @@
 import tempfile
 from pathlib import Path
+from unittest.mock import MagicMock, patch
+
 import pytest
 from docx import Document
 
@@ -70,4 +72,24 @@ class TestApplySettingsToDocument:
             settings = FormatSettings()
             result = apply_settings_to_document(src, settings, output_path=out)
             assert result == out
+            assert out.exists()
+
+    def test_doc_file_converted_before_processing(self):
+        with tempfile.TemporaryDirectory() as td:
+            doc_path = Path(td) / "test.doc"
+            doc_path.write_text("fake doc content")
+            expected_docx = Path(td) / "test.docx"
+
+            # Pre-create the expected .docx so Document() can open it after mocked conversion
+            Document().save(expected_docx)
+
+            mock_word = MagicMock()
+            mock_doc = MagicMock()
+            mock_word.Documents.Open.return_value = mock_doc
+
+            settings = FormatSettings()
+            with patch("win32com.client.DispatchEx", return_value=mock_word):
+                out = apply_settings_to_document(doc_path, settings)
+
+            assert out.suffix == ".docx"
             assert out.exists()
