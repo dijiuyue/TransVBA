@@ -138,6 +138,36 @@ class TvbaMainWindow(tk.Tk):
         self.cmb_body_align = ttk.Combobox(frame, values=["左对齐", "居中", "右对齐", "两端对齐"], state="readonly")
         self.cmb_body_align.grid(row=row, column=1, sticky=tk.EW, padx=5, pady=3)
 
+        row += 1
+        ttk.Label(frame, text="段前行数:").grid(row=row, column=0, sticky=tk.W, padx=5, pady=3)
+        self.spn_body_before = ttk.Spinbox(frame, from_=0, to=3, increment=0.5)
+        self.spn_body_before.grid(row=row, column=1, sticky=tk.EW, padx=5, pady=3)
+
+        row += 1
+        ttk.Label(frame, text="段后行数:").grid(row=row, column=0, sticky=tk.W, padx=5, pady=3)
+        self.spn_body_after = ttk.Spinbox(frame, from_=0, to=3, increment=0.5)
+        self.spn_body_after.grid(row=row, column=1, sticky=tk.EW, padx=5, pady=3)
+
+        row += 1
+        ttk.Label(frame, text="左缩进(cm):").grid(row=row, column=0, sticky=tk.W, padx=5, pady=3)
+        self.spn_body_left = ttk.Spinbox(frame, from_=0.0, to=5.0, increment=0.1)
+        self.spn_body_left.grid(row=row, column=1, sticky=tk.EW, padx=5, pady=3)
+
+        row += 1
+        ttk.Label(frame, text="右缩进(cm):").grid(row=row, column=0, sticky=tk.W, padx=5, pady=3)
+        self.spn_body_right = ttk.Spinbox(frame, from_=0.0, to=5.0, increment=0.1)
+        self.spn_body_right.grid(row=row, column=1, sticky=tk.EW, padx=5, pady=3)
+
+        row += 1
+        ttk.Label(frame, text="特殊缩进:").grid(row=row, column=0, sticky=tk.W, padx=5, pady=3)
+        self.cmb_body_special = ttk.Combobox(frame, values=["无", "首行缩进", "悬挂缩进"], state="readonly")
+        self.cmb_body_special.grid(row=row, column=1, sticky=tk.EW, padx=5, pady=3)
+
+        row += 1
+        ttk.Label(frame, text="缩进值(cm):").grid(row=row, column=0, sticky=tk.W, padx=5, pady=3)
+        self.spn_body_special = ttk.Spinbox(frame, from_=0.0, to=3.0, increment=0.1)
+        self.spn_body_special.grid(row=row, column=1, sticky=tk.EW, padx=5, pady=3)
+
         return frame
 
     def _build_title_panel(self, level: int = 1):
@@ -326,6 +356,12 @@ class TvbaMainWindow(tk.Tk):
             self.cmb_body_size.set(s.body.size)
             self.spn_body_spacing.set(str(s.body.spacing))
             self.cmb_body_align.set(s.body.alignment)
+            self.spn_body_before.set(str(s.body.before_lines))
+            self.spn_body_after.set(str(s.body.after_lines))
+            self.spn_body_left.set(str(s.body.left_indent_cm))
+            self.spn_body_right.set(str(s.body.right_indent_cm))
+            self.cmb_body_special.set(s.body.special_indent)
+            self.spn_body_special.set(str(s.body.special_indent_cm))
 
         # Titles
         for i in range(1, 6):
@@ -420,6 +456,12 @@ class TvbaMainWindow(tk.Tk):
             self.controller.update_setting("body.size", self.cmb_body_size.get())
             self.controller.update_setting("body.spacing", float(self.spn_body_spacing.get()))
             self.controller.update_setting("body.alignment", self.cmb_body_align.get())
+            self.controller.update_setting("body.before_lines", float(self.spn_body_before.get()))
+            self.controller.update_setting("body.after_lines", float(self.spn_body_after.get()))
+            self.controller.update_setting("body.left_indent_cm", float(self.spn_body_left.get()))
+            self.controller.update_setting("body.right_indent_cm", float(self.spn_body_right.get()))
+            self.controller.update_setting("body.special_indent", self.cmb_body_special.get())
+            self.controller.update_setting("body.special_indent_cm", float(self.spn_body_special.get()))
 
         # Sync title settings (all 5 levels)
         for i in range(1, 6):
