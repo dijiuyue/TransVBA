@@ -34,7 +34,7 @@ class TestBodySettings:
         assert b.size == "小四"
         assert b.spacing == 1.5
         assert b.special_indent == "首行缩进"
-        assert b.special_indent_cm == 0.74
+        assert b.special_indent_chars == 2.0
 
     def test_frozen_cannot_mutate(self):
         b = BodySettings()

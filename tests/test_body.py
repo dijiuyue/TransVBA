@@ -51,7 +51,7 @@ class TestApplyParagraph:
     def test_applies_first_line_indent(self):
         doc = Document()
         para = doc.add_paragraph("正文段落")
-        body = BodySettings(special_indent="首行缩进", special_indent_cm=0.74)
+        body = BodySettings(special_indent="首行缩进", special_indent_chars=2.0)
         apply_paragraph(para, body)
         pPr = para._element.find(".//w:pPr", NSMAP)
         ind = pPr.find("w:ind", NSMAP)

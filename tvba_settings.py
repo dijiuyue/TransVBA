@@ -29,7 +29,7 @@ class BodySettings:
     left_indent_cm: float = 0.0
     right_indent_cm: float = 0.0
     special_indent: str = "首行缩进"
-    special_indent_cm: float = 0.74
+    special_indent_chars: float = 2.0
 
 
 @dataclass(frozen=True)

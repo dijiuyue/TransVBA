@@ -179,8 +179,8 @@ class TvbaMainWindow(tk.Tk):
         self.cmb_body_special.grid(row=row, column=1, sticky=tk.EW, padx=5, pady=3)
 
         row += 1
-        ttk.Label(frame, text="缩进值(cm):").grid(row=row, column=0, sticky=tk.W, padx=5, pady=3)
-        self.spn_body_special = ttk.Spinbox(frame, from_=0.0, to=3.0, increment=0.1)
+        ttk.Label(frame, text="缩进值(字符):").grid(row=row, column=0, sticky=tk.W, padx=5, pady=3)
+        self.spn_body_special = ttk.Spinbox(frame, from_=0.0, to=10.0, increment=0.5)
         self.spn_body_special.grid(row=row, column=1, sticky=tk.EW, padx=5, pady=3)
 
         return frame
@@ -392,7 +392,7 @@ class TvbaMainWindow(tk.Tk):
             self.spn_body_left.set(str(s.body.left_indent_cm))
             self.spn_body_right.set(str(s.body.right_indent_cm))
             self.cmb_body_special.set(s.body.special_indent)
-            self.spn_body_special.set(str(s.body.special_indent_cm))
+            self.spn_body_special.set(str(s.body.special_indent_chars))
 
         # Titles
         for i in range(1, 6):
@@ -466,7 +466,11 @@ class TvbaMainWindow(tk.Tk):
         )
         if result.success:
             self.status.config(text=f"完成: {result.output_path}")
-            messagebox.showinfo("完成", "格式刷新成功！")
+            if result.elapsed_ms < 1000:
+                time_str = f"{result.elapsed_ms} 毫秒"
+            else:
+                time_str = f"{result.elapsed_ms / 1000:.2f} 秒"
+            messagebox.showinfo("完成", f"格式刷新成功！\n耗时: {time_str}")
         else:
             self.status.config(text=f"错误: {result.message}")
             messagebox.showerror("错误", result.message)
@@ -550,7 +554,7 @@ class TvbaMainWindow(tk.Tk):
                 self.controller.update_setting("body.special_indent", val)
             fval = _safe_float(self.spn_body_special)
             if fval is not None:
-                self.controller.update_setting("body.special_indent_cm", fval)
+                self.controller.update_setting("body.special_indent_chars", fval)
 
         # Sync title settings (all 5 levels)
         for i in range(1, 6):

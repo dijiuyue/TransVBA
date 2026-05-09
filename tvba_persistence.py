@@ -44,8 +44,13 @@ class SettingsRepository:
         )
         if len(titles) != 5:
             titles = tuple(TitleLevelSettings() for _ in range(5))
+        body_data = data.get("body", {})
+        # Backward compat: old configs used special_indent_cm (cm) instead of chars
+        if "special_indent_cm" in body_data and "special_indent_chars" not in body_data:
+            from tvba_utils import cm_to_points
+            body_data["special_indent_chars"] = cm_to_points(body_data.pop("special_indent_cm")) / 12.0
         return FormatSettings(
-            body=BodySettings(**data.get("body", {})),
+            body=BodySettings(**body_data),
             titles=titles,
             table=TableSettings(**data.get("table", {})),
             figure=FigureSettings(**data.get("figure", {})),
