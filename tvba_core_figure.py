@@ -4,11 +4,10 @@ Corresponds to VBA FormatModule.bas:
   - RefreshFigureCaptions
   - IsFigureCaptionLine
 """
-from tvba_core_oox import set_far_east_font, set_ascii_font, set_before_after_lines
+from tvba_core_oox import set_far_east_font, set_ascii_font, set_run_font_size, set_before_after_lines
 import re
 
 from tvba_utils import clean_para_text, size_label_to_points
-from docx.shared import Pt
 
 # VBA pattern: ^图\s*\d+(\.\d+)*-\d+[\t ]+.+$
 _FIGURE_CAPTION_RE = re.compile(
@@ -28,7 +27,7 @@ def apply_figure_caption(para, settings) -> None:
     for run in para.runs:
         set_ascii_font(run, "Times New Roman")
         set_far_east_font(run, settings.title_font)
-        run.font.size = Pt(size_label_to_points(settings.title_size))
+        set_run_font_size(run, size_label_to_points(settings.title_size))
         run.font.bold = settings.title_bold
 
     para.alignment = 1  # Center

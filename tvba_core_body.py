@@ -7,11 +7,12 @@ Corresponds to VBA FormatModule.bas:
 from tvba_core_oox import (
     set_far_east_font,
     set_ascii_font,
+    set_run_font_size,
+    set_style_font_size,
     apply_indent_chars,
     set_before_after_lines,
 )
 from tvba_utils import size_label_to_points, cm_to_points
-from docx.shared import Pt
 
 _ALIGNMENT_MAP = {
     "左对齐": 0,
@@ -24,7 +25,7 @@ def apply_normal_style(doc, body) -> None:
     """Apply body settings to the Normal style."""
     normal = doc.styles["Normal"]
     normal.font.name = "Times New Roman"
-    normal.font.size = Pt(size_label_to_points(body.size))
+    set_style_font_size(normal, size_label_to_points(body.size))
     # East Asian font
     for para in doc.paragraphs:
         for run in para.runs:
@@ -47,7 +48,7 @@ def apply_paragraph(para, body) -> None:
     for run in para.runs:
         set_ascii_font(run, "Times New Roman")
         set_far_east_font(run, body.font)
-        run.font.size = Pt(size_label_to_points(body.size))
+        set_run_font_size(run, size_label_to_points(body.size))
 
     # Alignment
     para.alignment = _ALIGNMENT_MAP.get(body.alignment, 3)
@@ -58,7 +59,7 @@ def apply_paragraph(para, body) -> None:
         left_chars=0.0,
         right_chars=0.0,
         special_kind=body.special_indent,
-        special_chars=cm_to_points(body.special_indent_cm) / 12.0,  # convert pt to chars
+        special_chars=body.special_indent_chars,
     )
 
     # Spacing (before/after in lines)

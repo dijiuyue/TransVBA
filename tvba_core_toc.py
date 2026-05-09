@@ -12,9 +12,8 @@ Corresponds to VBA FormatModule.bas:
 """
 import re
 
-from tvba_core_oox import set_far_east_font, set_ascii_font
+from tvba_core_oox import set_far_east_font, set_ascii_font, set_run_font_size
 from tvba_utils import clean_para_text, size_label_to_points
-from docx.shared import Pt
 
 # Matches numeric prefix like "1", "1.1", "1.1.2" (halfwidth or fullwidth digits/dots)
 _TOC_NUMBER_RE = re.compile(r"^([\d０-９]+([\.．][\d０-９]+){0,6})[ \t]*")
@@ -99,7 +98,7 @@ def apply_toc_title_style(para, defaults) -> None:
     for run in para.runs:
         set_ascii_font(run, "Times New Roman")
         set_far_east_font(run, defaults.title_font)
-        run.font.size = Pt(size_label_to_points(defaults.title_size))
+        set_run_font_size(run, size_label_to_points(defaults.title_size))
         run.font.bold = defaults.title_bold
     # Line spacing
     pPr = para._element.find(".//w:pPr", {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"})
@@ -139,7 +138,7 @@ def apply_toc_entry_style(doc, para, level: int, defaults) -> None:
     for run in para.runs:
         set_ascii_font(run, "Times New Roman")
         set_far_east_font(run, font)
-        run.font.size = Pt(size_label_to_points(size))
+        set_run_font_size(run, size_label_to_points(size))
         if level == 1:
             run.font.bold = bold
 

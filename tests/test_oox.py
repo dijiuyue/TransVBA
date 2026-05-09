@@ -7,6 +7,8 @@ from lxml import etree
 from tvba_core_oox import (
     set_far_east_font,
     set_ascii_font,
+    set_run_font_size,
+    set_style_font_size,
     set_outline_level,
     apply_indent_chars,
     set_before_after_lines,
@@ -165,3 +167,72 @@ class TestRowHeight:
         # 0.7 cm = 0.7 * 28.3465 pt * 20 twips/pt = ~397 twips
         assert trHeight.get("{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val") is not None
         assert trHeight.get("{http://schemas.openxmlformats.org/wordprocessingml/2006/main}hRule") == "atLeast"
+
+
+class TestSetRunFontSize:
+    def test_sets_both_w_sz_and_w_szCs(self):
+        doc = Document()
+        para = doc.add_paragraph("测试")
+        run = para.runs[0]
+        set_run_font_size(run, 12.0)
+        rPr = run._element.find(".//w:rPr", NSMAP)
+        assert rPr is not None
+        sz = rPr.find("w:sz", NSMAP)
+        szCs = rPr.find("w:szCs", NSMAP)
+        assert sz is not None
+        assert szCs is not None
+        # 12 pt = 24 half-points
+        assert sz.get("{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val") == "24"
+        assert szCs.get("{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val") == "24"
+
+    def test_creates_rPr_if_missing(self):
+        doc = Document()
+        para = doc.add_paragraph("测试")
+        run = para.runs[0]
+        # Ensure no rPr exists initially
+        rPr = run._element.find("w:rPr", NSMAP)
+        if rPr is not None:
+            run._element.remove(rPr)
+        set_run_font_size(run, 10.5)
+        rPr = run._element.find(".//w:rPr", NSMAP)
+        assert rPr is not None
+        sz = rPr.find("w:sz", NSMAP)
+        szCs = rPr.find("w:szCs", NSMAP)
+        assert sz is not None
+        assert szCs is not None
+        # 10.5 pt = 21 half-points
+        assert sz.get("{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val") == "21"
+        assert szCs.get("{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val") == "21"
+
+
+class TestSetStyleFontSize:
+    def test_sets_both_w_sz_and_w_szCs_on_style(self):
+        doc = Document()
+        style = doc.styles["Normal"]
+        set_style_font_size(style, 12.0)
+        rPr = style.element.find(".//w:rPr", NSMAP)
+        assert rPr is not None
+        sz = rPr.find("w:sz", NSMAP)
+        szCs = rPr.find("w:szCs", NSMAP)
+        assert sz is not None
+        assert szCs is not None
+        assert sz.get("{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val") == "24"
+        assert szCs.get("{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val") == "24"
+
+    def test_creates_rPr_if_missing(self):
+        doc = Document()
+        style = doc.styles["Heading 1"]
+        # Remove existing rPr if any
+        rPr = style.element.find("w:rPr", NSMAP)
+        if rPr is not None:
+            style.element.remove(rPr)
+        set_style_font_size(style, 16.0)
+        rPr = style.element.find(".//w:rPr", NSMAP)
+        assert rPr is not None
+        sz = rPr.find("w:sz", NSMAP)
+        szCs = rPr.find("w:szCs", NSMAP)
+        assert sz is not None
+        assert szCs is not None
+        # 16 pt = 32 half-points
+        assert sz.get("{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val") == "32"
+        assert szCs.get("{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val") == "32"

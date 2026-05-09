@@ -40,6 +40,43 @@ def set_ascii_font(run, font_name: str) -> None:
     run.font.name = font_name
 
 
+def set_run_font_size(run, points: float) -> None:
+    """Set font size on a run in both w:sz (western) and w:szCs (eastAsian).
+
+    python-docx run.font.size only sets w:sz. For CJK documents, Word also
+    reads w:szCs for east Asian text, so both must be set.
+    """
+    rPr = _ensure_rPr(run)
+    half_points = str(int(points * 2))
+    sz = rPr.find(_ns("sz"))
+    if sz is None:
+        sz = etree.SubElement(rPr, _ns("sz"))
+    sz.set(_ns("val"), half_points)
+    szCs = rPr.find(_ns("szCs"))
+    if szCs is None:
+        szCs = etree.SubElement(rPr, _ns("szCs"))
+    szCs.set(_ns("val"), half_points)
+
+
+def set_style_font_size(style, points: float) -> None:
+    """Set font size on a style in both w:sz and w:szCs.
+
+    python-docx style.font.size only sets w:sz.
+    """
+    rPr = style.element.find(_ns("rPr"))
+    if rPr is None:
+        rPr = etree.SubElement(style.element, _ns("rPr"))
+    half_points = str(int(points * 2))
+    sz = rPr.find(_ns("sz"))
+    if sz is None:
+        sz = etree.SubElement(rPr, _ns("sz"))
+    sz.set(_ns("val"), half_points)
+    szCs = rPr.find(_ns("szCs"))
+    if szCs is None:
+        szCs = etree.SubElement(rPr, _ns("szCs"))
+    szCs.set(_ns("val"), half_points)
+
+
 def set_outline_level(paragraph, level_zero_indexed: int) -> None:
     """Set paragraph outline level (0-8)."""
     pPr = _ensure_pPr(paragraph)

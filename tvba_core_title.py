@@ -9,10 +9,10 @@ Corresponds to VBA FormatModule.bas:
 """
 import re
 
-from docx.shared import Pt
 from tvba_core_oox import (
     set_far_east_font,
     set_ascii_font,
+    set_run_font_size,
     set_outline_level,
     apply_indent_chars,
     set_before_after_lines,
@@ -76,7 +76,7 @@ def apply_title_style(paragraph, level: int, level_settings, body_settings) -> N
     for run in paragraph.runs:
         set_ascii_font(run, "Times New Roman")
         set_far_east_font(run, level_settings.font)
-        run.font.size = Pt(size_label_to_points(level_settings.size))
+        set_run_font_size(run, size_label_to_points(level_settings.size))
         run.font.bold = level_settings.bold
 
     # Alignment
@@ -114,6 +114,13 @@ def auto_detect_and_format(doc, settings, list_resolver=None) -> None:
     for para in doc.paragraphs:
         if is_toc_paragraph(para):
             continue
+
+        # Skip paragraphs that already have an outline level set by the user
+        pPr = para._element.find(".//w:pPr", {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"})
+        if pPr is not None:
+            existing_outline = pPr.find("w:outlineLvl", {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"})
+            if existing_outline is not None:
+                continue
 
         text = clean_para_text(para.text)
         if not text:

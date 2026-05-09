@@ -10,6 +10,7 @@ Corresponds to VBA FormatModule.bas:
 from tvba_core_oox import (
     set_far_east_font,
     set_ascii_font,
+    set_run_font_size,
     set_table_layout_window,
     set_table_layout_content,
     set_table_borders,
@@ -20,7 +21,6 @@ from tvba_core_oox import (
 import re
 
 from tvba_utils import clean_para_text, size_label_to_points, cm_to_points
-from docx.shared import Pt
 
 # VBA pattern: ^表\s*\d+(\.\d+)*-\d+[\t ]+.+$
 _TABLE_CAPTION_RE = re.compile(
@@ -96,7 +96,7 @@ def apply_table_caption(para, settings) -> None:
     for run in para.runs:
         set_ascii_font(run, "Times New Roman")
         set_far_east_font(run, settings.title_font)
-        run.font.size = Pt(size_label_to_points(settings.title_size))
+        set_run_font_size(run, size_label_to_points(settings.title_size))
         run.font.bold = settings.title_bold
 
     para.alignment = 1  # Center alignment for captions
@@ -141,7 +141,7 @@ def apply_table_body(table, settings) -> None:
                 for run in para.runs:
                     set_ascii_font(run, "Times New Roman")
                     set_far_east_font(run, settings.body_font)
-                    run.font.size = Pt(size_label_to_points(settings.body_size))
+                    set_run_font_size(run, size_label_to_points(settings.body_size))
                 # Line spacing
                 pPr = para._element.find(".//w:pPr", {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"})
                 if pPr is not None:
