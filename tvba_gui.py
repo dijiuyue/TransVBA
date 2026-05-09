@@ -321,6 +321,9 @@ class TvbaMainWindow(tk.Tk):
         self.var_include_list = tk.BooleanVar(value=True)
         ttk.Checkbutton(frame, text="包含列表段落", variable=self.var_include_list).pack(anchor=tk.W, pady=5)
 
+        self.var_com_resolver = tk.BooleanVar(value=False)
+        ttk.Checkbutton(frame, text="使用 Word COM 读取列表级别(需安装 Word)", variable=self.var_com_resolver).pack(anchor=tk.W, pady=5)
+
         return frame
 
     def _on_tree_select(self, event):
@@ -404,6 +407,7 @@ class TvbaMainWindow(tk.Tk):
             self.var_auto_detect.set(s.auto_detect_numeric_titles)
             self.var_include_list.set(s.auto_detect_include_list_paragraphs)
             self.chk_remember.set(s.remember_settings)
+            self.var_com_resolver.set(s.prefer_com_resolver)
 
     def _on_open(self):
         path = filedialog.askopenfilename(filetypes=[("Word documents", "*.docx")])
@@ -519,3 +523,4 @@ class TvbaMainWindow(tk.Tk):
             self.controller.update_setting("auto_detect_numeric_titles", self.var_auto_detect.get())
             self.controller.update_setting("auto_detect_include_list_paragraphs", self.var_include_list.get())
             self.controller.update_setting("remember_settings", self.chk_remember.get())
+            self.controller.update_setting("prefer_com_resolver", self.var_com_resolver.get())

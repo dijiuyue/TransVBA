@@ -96,3 +96,4 @@ class FormatSettings:
     auto_detect_numeric_titles: bool = True
     auto_detect_include_list_paragraphs: bool = True
     remember_settings: bool = True
+    prefer_com_resolver: bool = False

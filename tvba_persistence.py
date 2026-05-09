@@ -53,6 +53,7 @@ class SettingsRepository:
             auto_detect_numeric_titles=data.get("auto_detect_numeric_titles", True),
             auto_detect_include_list_paragraphs=data.get("auto_detect_include_list_paragraphs", True),
             remember_settings=data.get("remember_settings", True),
+            prefer_com_resolver=data.get("prefer_com_resolver", False),
         )
 
 

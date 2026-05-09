@@ -97,7 +97,7 @@ class TvbaController:
                 )
                 return ValidationResult(valid=True)
 
-            elif parts[0] in ("auto_detect_numeric_titles", "auto_detect_include_list_paragraphs", "remember_settings") and len(parts) == 1:
+            elif parts[0] in ("auto_detect_numeric_titles", "auto_detect_include_list_paragraphs", "remember_settings", "prefer_com_resolver") and len(parts) == 1:
                 self._settings = replace(
                     self._settings,
                     **{parts[0]: value},
