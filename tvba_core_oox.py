@@ -26,6 +26,51 @@ def _ensure_pPr(para) -> etree._Element:
     return pPr
 
 
+def format_all_runs_in_paragraph(para, *, ascii_font: str, eastasia_font: str, size_pt: float, bold: bool = False) -> None:
+    """Format all runs in a paragraph, including nested ones (fields, hyperlinks).
+
+    python-docx's para.runs only returns direct children. Runs inside
+    w:hyperlink, w:fldSimple, etc. are missed. This function walks the
+    entire paragraph XML tree and formats every w:r element.
+    """
+    half_points = str(int(size_pt * 2))
+    W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+
+    for run_elem in para._element.findall(f".//{{{W}}}r"):
+        rPr = run_elem.find(f"{{{W}}}rPr")
+        if rPr is None:
+            rPr = etree.SubElement(run_elem, f"{{{W}}}rPr")
+
+        # Set fonts
+        rFonts = rPr.find(f"{{{W}}}rFonts")
+        if rFonts is None:
+            rFonts = etree.SubElement(rPr, f"{{{W}}}rFonts")
+        rFonts.set(f"{{{W}}}ascii", ascii_font)
+        rFonts.set(f"{{{W}}}hAnsi", ascii_font)
+        rFonts.set(f"{{{W}}}eastAsia", eastasia_font)
+
+        # Set size (both western and CJK)
+        sz = rPr.find(f"{{{W}}}sz")
+        if sz is None:
+            sz = etree.SubElement(rPr, f"{{{W}}}sz")
+        sz.set(f"{{{W}}}val", half_points)
+
+        szCs = rPr.find(f"{{{W}}}szCs")
+        if szCs is None:
+            szCs = etree.SubElement(rPr, f"{{{W}}}szCs")
+        szCs.set(f"{{{W}}}val", half_points)
+
+        # Set bold
+        if bold:
+            b = rPr.find(f"{{{W}}}b")
+            if b is None:
+                etree.SubElement(rPr, f"{{{W}}}b")
+        else:
+            b = rPr.find(f"{{{W}}}b")
+            if b is not None:
+                rPr.remove(b)
+
+
 def set_far_east_font(run, font_name: str) -> None:
     """Set East Asian font via w:rFonts/@w:eastAsia."""
     rPr = _ensure_rPr(run)
@@ -190,6 +235,111 @@ def set_before_after_lines(paragraph_format, *, before_lines: float, after_lines
 
 
 from tvba_utils import cm_to_points
+
+
+def sync_numbering_with_titles(doc, settings) -> None:
+    """Update numbering definitions so auto-generated list numbers match title formatting.
+
+    When paragraphs use Word multilevel lists for headings, the numbers are
+    rendered by Word from numbering definitions in numbering.xml, not from
+    paragraph runs. This function updates the w:rPr inside w:lvl elements to
+    match the corresponding title settings.
+    """
+    from tvba_utils import size_label_to_points
+
+    numbering_part = doc.part.numbering_part
+    if numbering_part is None:
+        return
+
+    # Collect numIds used by heading paragraphs (have outline level)
+    heading_num_ids = set()
+    W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+    for para in doc.paragraphs:
+        pPr = para._element.find(f".//{{{W}}}pPr")
+        if pPr is None:
+            continue
+        # Check if paragraph has outline level (title)
+        outline = pPr.find(f"{{{W}}}outlineLvl")
+        if outline is None:
+            continue
+        # Check if paragraph also has list numbering
+        numPr = pPr.find(f"{{{W}}}numPr")
+        if numPr is None:
+            continue
+        numId_elem = numPr.find(f"{{{W}}}numId")
+        if numId_elem is not None:
+            val = numId_elem.get(f"{{{W}}}val")
+            if val is not None:
+                heading_num_ids.add(val)
+
+    if not heading_num_ids:
+        return
+
+    # Map numId -> abstractNumId
+    num_id_to_abstract = {}
+    for num in numbering_part._element.findall(f"{{{W}}}num"):
+        num_id = num.get(f"{{{W}}}numId")
+        abstract_id_elem = num.find(f"{{{W}}}abstractNumId")
+        if abstract_id_elem is not None:
+            abstract_id = abstract_id_elem.get(f"{{{W}}}val")
+            if num_id is not None and abstract_id is not None:
+                num_id_to_abstract[num_id] = abstract_id
+
+    # Find abstractNums used by headings and update their levels
+    abstract_ids_to_update = {
+        num_id_to_abstract[nid]
+        for nid in heading_num_ids
+        if nid in num_id_to_abstract
+    }
+
+    for abstract_num in numbering_part._element.findall(f"{{{W}}}abstractNum"):
+        abstract_id = abstract_num.get(f"{{{W}}}abstractNumId")
+        if abstract_id not in abstract_ids_to_update:
+            continue
+
+        for lvl in abstract_num.findall(f"{{{W}}}lvl"):
+            ilvl_str = lvl.get(f"{{{W}}}ilvl")
+            if ilvl_str is None:
+                continue
+            ilvl = int(ilvl_str)
+            if not (0 <= ilvl <= 4):
+                continue
+
+            title_settings = settings.titles[ilvl]
+            half_points = str(int(size_label_to_points(title_settings.size) * 2))
+
+            rPr = lvl.find(f"{{{W}}}rPr")
+            if rPr is None:
+                rPr = etree.SubElement(lvl, f"{{{W}}}rPr")
+
+            # Font
+            rFonts = rPr.find(f"{{{W}}}rFonts")
+            if rFonts is None:
+                rFonts = etree.SubElement(rPr, f"{{{W}}}rFonts")
+            rFonts.set(f"{{{W}}}ascii", "Times New Roman")
+            rFonts.set(f"{{{W}}}hAnsi", "Times New Roman")
+            rFonts.set(f"{{{W}}}eastAsia", title_settings.font)
+
+            # Size
+            sz = rPr.find(f"{{{W}}}sz")
+            if sz is None:
+                sz = etree.SubElement(rPr, f"{{{W}}}sz")
+            sz.set(f"{{{W}}}val", half_points)
+
+            szCs = rPr.find(f"{{{W}}}szCs")
+            if szCs is None:
+                szCs = etree.SubElement(rPr, f"{{{W}}}szCs")
+            szCs.set(f"{{{W}}}val", half_points)
+
+            # Bold
+            if title_settings.bold:
+                b = rPr.find(f"{{{W}}}b")
+                if b is None:
+                    etree.SubElement(rPr, f"{{{W}}}b")
+            else:
+                b = rPr.find(f"{{{W}}}b")
+                if b is not None:
+                    rPr.remove(b)
 
 
 def set_table_layout_window(table) -> None:

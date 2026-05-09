@@ -8,15 +8,13 @@ Corresponds to VBA FormatModule.bas:
   - IsTableCaptionLine
 """
 from tvba_core_oox import (
-    set_far_east_font,
-    set_ascii_font,
-    set_run_font_size,
     set_table_layout_window,
     set_table_layout_content,
     set_table_borders,
     set_row_height_at_least,
     apply_indent_chars,
     set_before_after_lines,
+    format_all_runs_in_paragraph,
 )
 import re
 
@@ -94,11 +92,13 @@ def find_table_caption(table, doc, max_up_paragraphs: int = 10):
 
 def apply_table_caption(para, settings) -> None:
     """Apply formatting to a table caption paragraph."""
-    for run in para.runs:
-        set_ascii_font(run, "Times New Roman")
-        set_far_east_font(run, settings.title_font)
-        set_run_font_size(run, size_label_to_points(settings.title_size))
-        run.font.bold = settings.title_bold
+    format_all_runs_in_paragraph(
+        para,
+        ascii_font="Times New Roman",
+        eastasia_font=settings.title_font,
+        size_pt=size_label_to_points(settings.title_size),
+        bold=settings.title_bold,
+    )
 
     para.alignment = 1  # Center alignment for captions
 
@@ -148,10 +148,13 @@ def apply_table_body(table, settings) -> None:
     for row in table.rows:
         for cell in row.cells:
             for para in cell.paragraphs:
-                for run in para.runs:
-                    set_ascii_font(run, "Times New Roman")
-                    set_far_east_font(run, settings.body_font)
-                    set_run_font_size(run, size_label_to_points(settings.body_size))
+                format_all_runs_in_paragraph(
+                    para,
+                    ascii_font="Times New Roman",
+                    eastasia_font=settings.body_font,
+                    size_pt=size_label_to_points(settings.body_size),
+                    bold=False,
+                )
                 # Line spacing
                 pPr = para._element.find(".//w:pPr", {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"})
                 if pPr is not None:

@@ -17,6 +17,7 @@ from tvba_core_oox import (
     get_effective_outline_level,
     apply_indent_chars,
     set_before_after_lines,
+    format_all_runs_in_paragraph,
 )
 from tvba_core_normalize import (
     apply_brackets,
@@ -73,12 +74,14 @@ def apply_title_style(paragraph, level: int, level_settings, body_settings) -> N
     # Set outline level (0-indexed: level 1 -> 0)
     set_outline_level(paragraph, level - 1)
 
-    # Font on each run
-    for run in paragraph.runs:
-        set_ascii_font(run, "Times New Roman")
-        set_far_east_font(run, level_settings.font)
-        set_run_font_size(run, size_label_to_points(level_settings.size))
-        run.font.bold = level_settings.bold
+    # Font on each run (including nested runs inside fields/hyperlinks)
+    format_all_runs_in_paragraph(
+        paragraph,
+        ascii_font="Times New Roman",
+        eastasia_font=level_settings.font,
+        size_pt=size_label_to_points(level_settings.size),
+        bold=level_settings.bold,
+    )
 
     # Alignment
     _ALIGNMENT_MAP = {"左对齐": 0, "居中": 1, "右对齐": 2, "两端对齐": 3}

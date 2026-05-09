@@ -4,7 +4,7 @@ Corresponds to VBA FormatModule.bas:
   - RefreshFigureCaptions
   - IsFigureCaptionLine
 """
-from tvba_core_oox import set_far_east_font, set_ascii_font, set_run_font_size, set_before_after_lines, apply_indent_chars
+from tvba_core_oox import set_before_after_lines, apply_indent_chars, format_all_runs_in_paragraph
 import re
 
 from tvba_utils import clean_para_text, size_label_to_points
@@ -25,11 +25,13 @@ def is_figure_caption_line(text: str) -> bool:
 
 def apply_figure_caption(para, settings) -> None:
     """Apply formatting to a figure caption paragraph."""
-    for run in para.runs:
-        set_ascii_font(run, "Times New Roman")
-        set_far_east_font(run, settings.title_font)
-        set_run_font_size(run, size_label_to_points(settings.title_size))
-        run.font.bold = settings.title_bold
+    format_all_runs_in_paragraph(
+        para,
+        ascii_font="Times New Roman",
+        eastasia_font=settings.title_font,
+        size_pt=size_label_to_points(settings.title_size),
+        bold=settings.title_bold,
+    )
 
     para.alignment = 1  # Center
 

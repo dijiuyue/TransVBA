@@ -16,7 +16,7 @@ from tvba_core_figure import refresh_all as refresh_figures
 from tvba_core_convert import ensure_docx
 from tvba_core_normalize import unify_ascii_font
 from tvba_core_numbering import auto_select
-from tvba_core_oox import get_effective_outline_level
+from tvba_core_oox import get_effective_outline_level, sync_numbering_with_titles
 
 
 def apply_settings_to_document(
@@ -67,6 +67,9 @@ def apply_settings_to_document(
         else:
             # Body text (no outline or level > 4) — apply body formatting
             apply_paragraph(para, settings.body)
+
+    # Sync numbering definitions so auto-generated list numbers match titles
+    sync_numbering_with_titles(doc, settings)
 
     if progress_cb:
         progress_cb("Formatting TOC...", 0.6)
