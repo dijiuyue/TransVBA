@@ -61,6 +61,22 @@ class TestTvbaController:
             assert result.success is True
             assert len(applier.calls) == 1
 
+    def test_apply_includes_elapsed_time(self):
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "test.docx"
+            doc = Document()
+            doc.add_paragraph("test")
+            doc.save(path)
+
+            repo = SettingsRepository()
+            applier = FakeDocumentApplier()
+            ctrl = TvbaController(repo, applier)
+            ctrl.open_file(path)
+            result = ctrl.apply(save_settings=False)
+            assert result.success is True
+            assert hasattr(result, "elapsed_ms")
+            assert result.elapsed_ms >= 0
+
     def test_reset_to_defaults(self):
         repo = SettingsRepository()
         applier = FakeDocumentApplier()

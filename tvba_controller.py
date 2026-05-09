@@ -2,6 +2,7 @@
 
 Completely independent of Tkinter. Testable with mock applier.
 """
+import time
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Callable, Protocol
@@ -21,6 +22,7 @@ class ApplyResult:
     success: bool
     message: str = ""
     output_path: Path | None = None
+    elapsed_ms: int = 0
 
 
 class DocumentApplier(Protocol):
@@ -113,17 +115,20 @@ class TvbaController:
         if self._opened_file is None:
             return ApplyResult(success=False, message="No file opened")
 
+        start = time.perf_counter()
         try:
             out = self._applier(
                 self._opened_file,
                 self._settings,
                 progress_cb=progress_cb,
             )
+            elapsed_ms = int((time.perf_counter() - start) * 1000)
             if save_settings and self._settings.remember_settings:
                 self._repo.save(self._settings)
-            return ApplyResult(success=True, output_path=out)
+            return ApplyResult(success=True, output_path=out, elapsed_ms=elapsed_ms)
         except Exception as e:
-            return ApplyResult(success=False, message=str(e))
+            elapsed_ms = int((time.perf_counter() - start) * 1000)
+            return ApplyResult(success=False, message=str(e), elapsed_ms=elapsed_ms)
 
     def reset_to_defaults(self) -> None:
         self._settings = FormatSettings()
