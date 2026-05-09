@@ -59,17 +59,28 @@ class TvbaMainWindow(tk.Tk):
         right_frame = ttk.Frame(paned)
         paned.add(right_frame, weight=1)
 
-        self.detail_canvas = tk.Canvas(right_frame)
+        self.detail_canvas = tk.Canvas(right_frame, highlightthickness=0)
         scrollbar = ttk.Scrollbar(right_frame, orient="vertical", command=self.detail_canvas.yview)
         self.detail_frame = ttk.Frame(self.detail_canvas)
 
+        # Use frame's requested size for scrollregion instead of canvas bbox("all").
+        # bbox("all") is unreliable because Combobox dropdowns (Toplevel windows)
+        # can transiently expand the reported bounds, causing a big empty area.
         self.detail_frame.bind(
             "<Configure>",
-            lambda e: self.detail_canvas.configure(scrollregion=self.detail_canvas.bbox("all"))
+            lambda e: self.detail_canvas.configure(
+                scrollregion=(0, 0, self.detail_frame.winfo_reqwidth(), self.detail_frame.winfo_reqheight())
+            )
         )
 
-        self.detail_canvas.create_window((0, 0), window=self.detail_frame, anchor="nw", width=680)
+        self._detail_window = self.detail_canvas.create_window((0, 0), window=self.detail_frame, anchor="nw")
         self.detail_canvas.configure(yscrollcommand=scrollbar.set)
+
+        # Dynamically resize the inner frame to match canvas width minus scrollbar
+        def _on_canvas_resize(event):
+            canvas_width = event.width
+            self.detail_canvas.itemconfig(self._detail_window, width=canvas_width)
+        self.detail_canvas.bind("<Configure>", _on_canvas_resize)
 
         self.detail_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
