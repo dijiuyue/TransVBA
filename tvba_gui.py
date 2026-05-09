@@ -104,7 +104,11 @@ class TvbaMainWindow(tk.Tk):
     def _get_or_build_panel(self, key: str):
         if key not in self._panels:
             builder = getattr(self, f"_build_{key}_panel", self._build_placeholder_panel)
-            self._panels[key] = builder()
+            panel = builder()
+            # Apply current edit state to newly built panel
+            state = "normal" if self.chk_edit.get() else "disabled"
+            self._set_edit_state_recursive(panel, state)
+            self._panels[key] = panel
         return self._panels[key]
 
     def _build_placeholder_panel(self):
@@ -443,10 +447,26 @@ class TvbaMainWindow(tk.Tk):
         self._populate_from_settings()
         self.status.config(text="已重置为默认值")
 
+    def _set_edit_state_recursive(self, widget, state):
+        """Recursively set state on all input widgets."""
+        input_types = (ttk.Combobox, ttk.Spinbox, ttk.Checkbutton, tk.Checkbutton)
+        if isinstance(widget, input_types):
+            try:
+                widget.config(state=state)
+            except Exception:
+                pass
+        for child in widget.winfo_children():
+            self._set_edit_state_recursive(child, state)
+
     def _on_edit_toggle(self):
         enabled = self.chk_edit.get()
         state = "normal" if enabled else "disabled"
-        # TODO: Enable/disable all input widgets
+        # Enable/disable all input widgets in all panels
+        for panel in self._panels.values():
+            self._set_edit_state_recursive(panel, state)
+        # Also apply to current panel if not in _panels yet
+        if self._current_panel:
+            self._set_edit_state_recursive(self._current_panel, state)
         self.status.config(text="修改模式已" + ("开启" if enabled else "关闭"))
 
     def _sync_settings_to_controller(self):
