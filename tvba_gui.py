@@ -346,25 +346,38 @@ class TvbaMainWindow(tk.Tk):
         if self._current_panel:
             self._current_panel.pack_forget()
 
+        is_new = False
         if item == "body":
+            is_new = "body" not in self._panels
             self._current_panel = self._get_or_build_panel("body")
         elif item.startswith("title_"):
             level = int(item.split("_")[1])
             key = f"title_{level}"
-            if key not in self._panels:
+            is_new = key not in self._panels
+            if is_new:
                 self._panels[key] = self._build_title_panel(level)
+                state = "normal" if self.chk_edit.get() else "disabled"
+                self._set_edit_state_recursive(self._panels[key], state)
             self._current_panel = self._panels[key]
         elif item == "table":
+            is_new = "table" not in self._panels
             self._current_panel = self._get_or_build_panel("table")
         elif item == "figure":
+            is_new = "figure" not in self._panels
             self._current_panel = self._get_or_build_panel("figure")
         elif item == "advanced":
+            is_new = "advanced" not in self._panels
             self._current_panel = self._get_or_build_panel("advanced")
         else:
             self._current_panel = self._build_placeholder_panel()
 
         if self._current_panel:
             self._current_panel.pack(fill=tk.BOTH, expand=True)
+
+        # Populate newly created panels from controller settings so they
+        # don't have empty values that crash _sync_settings_to_controller.
+        if is_new:
+            self._populate_from_settings()
 
     def _populate_from_settings(self):
         s = self.controller.settings
@@ -431,7 +444,13 @@ class TvbaMainWindow(tk.Tk):
             self.status.config(text=f"已打开: {p.name}")
 
     def _on_apply(self):
-        self._sync_settings_to_controller()
+        try:
+            self._sync_settings_to_controller()
+        except Exception as e:
+            self.status.config(text=f"错误: 同步设置失败")
+            messagebox.showerror("错误", f"同步设置失败: {e}")
+            return
+
         self.progress["value"] = 0
         self.status.config(text="正在应用...")
         self.update()
@@ -487,49 +506,116 @@ class TvbaMainWindow(tk.Tk):
         self.status.config(text="修改模式已" + ("开启" if enabled else "关闭"))
 
     def _sync_settings_to_controller(self):
+        def _safe_float(widget):
+            try:
+                val = widget.get()
+                return float(val) if val != "" else None
+            except (ValueError, TypeError):
+                return None
+
+        def _safe_get(widget):
+            try:
+                return widget.get()
+            except (AttributeError, tk.TclError):
+                return None
+
         # Sync body settings
         if hasattr(self, "cmb_body_font"):
-            self.controller.update_setting("body.font", self.cmb_body_font.get())
-            self.controller.update_setting("body.size", self.cmb_body_size.get())
-            self.controller.update_setting("body.spacing", float(self.spn_body_spacing.get()))
-            self.controller.update_setting("body.alignment", self.cmb_body_align.get())
-            self.controller.update_setting("body.before_lines", float(self.spn_body_before.get()))
-            self.controller.update_setting("body.after_lines", float(self.spn_body_after.get()))
-            self.controller.update_setting("body.left_indent_cm", float(self.spn_body_left.get()))
-            self.controller.update_setting("body.right_indent_cm", float(self.spn_body_right.get()))
-            self.controller.update_setting("body.special_indent", self.cmb_body_special.get())
-            self.controller.update_setting("body.special_indent_cm", float(self.spn_body_special.get()))
+            val = _safe_get(self.cmb_body_font)
+            if val:
+                self.controller.update_setting("body.font", val)
+            val = _safe_get(self.cmb_body_size)
+            if val:
+                self.controller.update_setting("body.size", val)
+            fval = _safe_float(self.spn_body_spacing)
+            if fval is not None:
+                self.controller.update_setting("body.spacing", fval)
+            val = _safe_get(self.cmb_body_align)
+            if val:
+                self.controller.update_setting("body.alignment", val)
+            fval = _safe_float(self.spn_body_before)
+            if fval is not None:
+                self.controller.update_setting("body.before_lines", fval)
+            fval = _safe_float(self.spn_body_after)
+            if fval is not None:
+                self.controller.update_setting("body.after_lines", fval)
+            fval = _safe_float(self.spn_body_left)
+            if fval is not None:
+                self.controller.update_setting("body.left_indent_cm", fval)
+            fval = _safe_float(self.spn_body_right)
+            if fval is not None:
+                self.controller.update_setting("body.right_indent_cm", fval)
+            val = _safe_get(self.cmb_body_special)
+            if val:
+                self.controller.update_setting("body.special_indent", val)
+            fval = _safe_float(self.spn_body_special)
+            if fval is not None:
+                self.controller.update_setting("body.special_indent_cm", fval)
 
         # Sync title settings (all 5 levels)
         for i in range(1, 6):
             if hasattr(self, f"cmb_title_{i}_font"):
-                self.controller.update_setting(f"titles.{i - 1}.font", getattr(self, f"cmb_title_{i}_font").get())
-                self.controller.update_setting(f"titles.{i - 1}.size", getattr(self, f"cmb_title_{i}_size").get())
+                val = _safe_get(getattr(self, f"cmb_title_{i}_font"))
+                if val:
+                    self.controller.update_setting(f"titles.{i - 1}.font", val)
+                val = _safe_get(getattr(self, f"cmb_title_{i}_size"))
+                if val:
+                    self.controller.update_setting(f"titles.{i - 1}.size", val)
                 self.controller.update_setting(f"titles.{i - 1}.bold", getattr(self, f"var_title_{i}_bold").get())
-                self.controller.update_setting(f"titles.{i - 1}.before_lines", float(getattr(self, f"spn_title_{i}_before").get()))
-                self.controller.update_setting(f"titles.{i - 1}.after_lines", float(getattr(self, f"spn_title_{i}_after").get()))
-                self.controller.update_setting(f"titles.{i - 1}.line_spacing", float(getattr(self, f"spn_title_{i}_spacing").get()))
-                self.controller.update_setting(f"titles.{i - 1}.alignment", getattr(self, f"cmb_title_{i}_align").get())
+                fval = _safe_float(getattr(self, f"spn_title_{i}_before"))
+                if fval is not None:
+                    self.controller.update_setting(f"titles.{i - 1}.before_lines", fval)
+                fval = _safe_float(getattr(self, f"spn_title_{i}_after"))
+                if fval is not None:
+                    self.controller.update_setting(f"titles.{i - 1}.after_lines", fval)
+                fval = _safe_float(getattr(self, f"spn_title_{i}_spacing"))
+                if fval is not None:
+                    self.controller.update_setting(f"titles.{i - 1}.line_spacing", fval)
+                val = _safe_get(getattr(self, f"cmb_title_{i}_align"))
+                if val:
+                    self.controller.update_setting(f"titles.{i - 1}.alignment", val)
 
         # Sync table settings
         if hasattr(self, "cmb_table_title_font"):
-            self.controller.update_setting("table.title_font", self.cmb_table_title_font.get())
-            self.controller.update_setting("table.title_size", self.cmb_table_title_size.get())
+            val = _safe_get(self.cmb_table_title_font)
+            if val:
+                self.controller.update_setting("table.title_font", val)
+            val = _safe_get(self.cmb_table_title_size)
+            if val:
+                self.controller.update_setting("table.title_size", val)
             self.controller.update_setting("table.title_bold", self.var_table_title_bold.get())
-            self.controller.update_setting("table.title_spacing", float(self.spn_table_title_spacing.get()))
-            self.controller.update_setting("table.body_font", self.cmb_table_body_font.get())
-            self.controller.update_setting("table.body_size", self.cmb_table_body_size.get())
-            self.controller.update_setting("table.line_width_pt", float(self.spn_table_line_width.get()))
-            self.controller.update_setting("table.row_height_cm", float(self.spn_table_row_height.get()))
-            self.controller.update_setting("table.spacing", float(self.spn_table_spacing.get()))
+            fval = _safe_float(self.spn_table_title_spacing)
+            if fval is not None:
+                self.controller.update_setting("table.title_spacing", fval)
+            val = _safe_get(self.cmb_table_body_font)
+            if val:
+                self.controller.update_setting("table.body_font", val)
+            val = _safe_get(self.cmb_table_body_size)
+            if val:
+                self.controller.update_setting("table.body_size", val)
+            fval = _safe_float(self.spn_table_line_width)
+            if fval is not None:
+                self.controller.update_setting("table.line_width_pt", fval)
+            fval = _safe_float(self.spn_table_row_height)
+            if fval is not None:
+                self.controller.update_setting("table.row_height_cm", fval)
+            fval = _safe_float(self.spn_table_spacing)
+            if fval is not None:
+                self.controller.update_setting("table.spacing", fval)
             self.controller.update_setting("table.auto_fit_window", self.var_table_auto_fit.get())
 
         # Sync figure settings
         if hasattr(self, "cmb_figure_title_font"):
-            self.controller.update_setting("figure.title_font", self.cmb_figure_title_font.get())
-            self.controller.update_setting("figure.title_size", self.cmb_figure_title_size.get())
+            val = _safe_get(self.cmb_figure_title_font)
+            if val:
+                self.controller.update_setting("figure.title_font", val)
+            val = _safe_get(self.cmb_figure_title_size)
+            if val:
+                self.controller.update_setting("figure.title_size", val)
             self.controller.update_setting("figure.title_bold", self.var_figure_title_bold.get())
-            self.controller.update_setting("figure.title_spacing", float(self.spn_figure_title_spacing.get()))
+            fval = _safe_float(self.spn_figure_title_spacing)
+            if fval is not None:
+                self.controller.update_setting("figure.title_spacing", fval)
 
         # Sync advanced settings
         if hasattr(self, "var_auto_detect"):
