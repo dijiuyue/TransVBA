@@ -421,7 +421,9 @@ class TvbaMainWindow(tk.Tk):
             self.var_com_resolver.set(s.prefer_com_resolver)
 
     def _on_open(self):
-        path = filedialog.askopenfilename(filetypes=[("Word documents", "*.docx")])
+        path = filedialog.askopenfilename(
+            filetypes=[("Word documents", "*.doc;*.docx"), ("All files", "*.*")]
+        )
         if path:
             p = Path(path)
             self.controller.open_file(p)
