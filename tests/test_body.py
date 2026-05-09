@@ -66,4 +66,4 @@ class TestApplyParagraph:
         pPr = para._element.find(".//w:pPr", NSMAP)
         spacing_el = pPr.find("w:spacing", NSMAP)
         assert spacing_el is not None
-        assert spacing_el.get("{http://schemas.openxmlformats.org/wordprocessingml/2006/main}line") == "400"
+        assert spacing_el.get("{http://schemas.openxmlformats.org/wordprocessingml/2006/main}line") == "480"

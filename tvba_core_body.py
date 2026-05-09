@@ -38,7 +38,7 @@ def apply_normal_style(doc, body) -> None:
         spacing = pPr.find(f"{{{W}}}spacing")
         if spacing is None:
             spacing = etree.SubElement(pPr, f"{{{W}}}spacing")
-        spacing.set(f"{{{W}}}line", str(int(body.spacing * 200)))
+        spacing.set(f"{{{W}}}line", str(int(body.spacing * 240)))
         spacing.set(f"{{{W}}}lineRule", "auto")
 
 def apply_paragraph(para, body) -> None:
@@ -76,5 +76,5 @@ def apply_paragraph(para, body) -> None:
         spacing = pPr.find(f"{{{W}}}spacing")
         if spacing is None:
             spacing = etree.SubElement(pPr, f"{{{W}}}spacing")
-        spacing.set(f"{{{W}}}line", str(int(body.spacing * 200)))
+        spacing.set(f"{{{W}}}line", str(int(body.spacing * 240)))
         spacing.set(f"{{{W}}}lineRule", "auto")
