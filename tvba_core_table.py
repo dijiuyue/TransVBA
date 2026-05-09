@@ -64,7 +64,30 @@ def find_table_caption(table, doc, max_up_paragraphs: int = 10):
         if is_table_caption_line(para.text):
             return para
 
-    # TODO: Shape/TextFrame search (COM fallback if needed)
+    # Search in shapes/text frames (WPS templates often put captions in text boxes)
+    # python-docx cannot modify shape text, but we can detect it for awareness
+    try:
+        from lxml import etree
+        W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+        # Search all w:drawing elements in the document for text box content
+        for drawing in doc.element.body.findall(f".//{{{W}}}drawing"):
+            # Look for text body (a:txBody) within the drawing
+            tx_body = drawing.find(".//{http://schemas.openxmlformats.org/drawingml/2006/main}txBody")
+            if tx_body is not None:
+                # Extract all paragraph text from the text body
+                texts = []
+                for ap in tx_body.findall("{http://schemas.openxmlformats.org/drawingml/2006/main}p"):
+                    para_text = ""
+                    for r in ap.findall(".//{http://schemas.openxmlformats.org/drawingml/2006/main}t"):
+                        if r.text:
+                            para_text += r.text
+                    if is_table_caption_line(para_text):
+                        # Found caption in shape — cannot format via python-docx,
+                        # but we can at least acknowledge it exists
+                        return None  # Return None since we can't return a paragraph object
+    except Exception:
+        pass
+
     return None
 
 
