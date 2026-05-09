@@ -62,3 +62,22 @@ class TestEnsureDocx:
             result = ensure_docx(doc)
 
         assert result == expected_out
+
+    def test_quit_failure_after_successful_save_still_returns_path(self, tmp_path):
+        """Word may auto-quit after doc.Close, causing word.Quit to fail.
+
+        This must NOT raise RuntimeError since conversion succeeded.
+        """
+        doc = tmp_path / "thesis.doc"
+        doc.write_text("fake doc content")
+        expected_out = tmp_path / "thesis.docx"
+
+        mock_word = MagicMock()
+        mock_doc = MagicMock()
+        mock_word.Documents.Open.return_value = mock_doc
+        mock_word.Quit.side_effect = Exception("word.application.quit")
+
+        with patch("win32com.client.DispatchEx", return_value=mock_word):
+            result = ensure_docx(doc, output_dir=tmp_path)
+
+        assert result == expected_out

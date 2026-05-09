@@ -33,12 +33,10 @@ def ensure_docx(doc_path: Path, *, output_dir: Path | None = None) -> Path:
             doc = word.Documents.Open(str(doc_path))
             # wdFormatXMLDocument = 16
             doc.SaveAs2(str(out_path), FileFormat=16)
-            doc.Close(SaveChanges=False)
-            doc = None
-            word.Quit()
-            word = None
             return out_path
         except Exception as e:
+            raise RuntimeError(f"Failed to convert .doc to .docx: {e}") from e
+        finally:
             try:
                 if doc:
                     doc.Close(SaveChanges=False)
@@ -49,6 +47,5 @@ def ensure_docx(doc_path: Path, *, output_dir: Path | None = None) -> Path:
                     word.Quit()
             except Exception:
                 pass
-            raise RuntimeError(f"Failed to convert .doc to .docx: {e}") from e
 
     return doc_path
