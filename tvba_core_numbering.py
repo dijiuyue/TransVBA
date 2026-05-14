@@ -84,7 +84,7 @@ class ComListResolver:
     Provides 100% VBA-compatible ListLevelNumber and ListString.
     """
 
-    def __init__(self, docx_path: str):
+    def __init__(self, docx_path: str, doc=None):
         self.docx_path = docx_path
         import win32com.client
 
@@ -94,6 +94,13 @@ class ComListResolver:
         self.word = win32com.client.DispatchEx("Word.Application")
         self.word.Visible = False
         self.doc = self.word.Documents.Open(self.docx_path)
+
+        # Pre-build element-to-COM-paragraph mapping to avoid O(n²)
+        # index lookups during title detection.
+        self._element_to_com = {}
+        if doc is not None:
+            for i, para in enumerate(doc.paragraphs):
+                self._element_to_com[id(para._element)] = self.doc.Paragraphs(i + 1)
 
     def close(self):
         """Explicitly close Word COM document and quit the application."""
@@ -128,7 +135,12 @@ class ComListResolver:
 
     def _get_com_paragraph(self, para):
         """Map a python-docx paragraph to the corresponding Word COM paragraph by index."""
-        # Find the index of the paragraph in the python-docx document
+        # Fast path: pre-built mapping
+        cached = self._element_to_com.get(id(para._element))
+        if cached is not None:
+            return cached
+
+        # Fallback: compute index dynamically
         parent = para._element.getparent()
         if parent is None:
             return None
@@ -187,7 +199,7 @@ def auto_select(prefer_com: bool = False, docx_path: str | None = None, doc=None
     """
     if prefer_com and docx_path is not None:
         try:
-            return ComListResolver(docx_path)
+            return ComListResolver(docx_path, doc=doc)
         except Exception:
             pass
     return DocxListResolver(doc)

@@ -65,7 +65,7 @@ class TestApplyTableBody:
     def test_sets_borders(self):
         doc = Document()
         table = doc.add_table(rows=2, cols=2)
-        settings = TableSettings(line_width_pt=1.0, auto_fit_window=True)
+        settings = TableSettings(line_width_pt=1.0, auto_fit_mode="window")
         apply_table_body(table, settings)
         tblPr = table._element.find(".//w:tblPr", {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"})
         borders = tblPr.find("w:tblBorders", {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"})

@@ -71,6 +71,33 @@ def format_all_runs_in_paragraph(para, *, ascii_font: str, eastasia_font: str, s
                 rPr.remove(b)
 
 
+def clear_paragraph_formatting(para) -> None:
+    """Remove run-level formatting (font, size, bold) from all runs in a paragraph.
+
+    Preserves text content — only clears formatting to prepare for fresh styling.
+    Also clears paragraph-level spacing and indentation.
+    """
+    W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+
+    for run_elem in para._element.findall(f".//{{{W}}}r"):
+        rPr = run_elem.find(f"{{{W}}}rPr")
+        if rPr is None:
+            continue
+
+        for tag in ("rFonts", "sz", "szCs", "b", "bCs", "i", "iCs", "u", "color", "highlight", "spacing", "kern"):
+            elem = rPr.find(f"{{{W}}}{tag}")
+            if elem is not None:
+                rPr.remove(elem)
+
+    # Clear paragraph spacing
+    pPr = para._element.find(f"{{{W}}}pPr")
+    if pPr is not None:
+        for tag in ("spacing", "ind", "jc"):
+            elem = pPr.find(f"{{{W}}}{tag}")
+            if elem is not None:
+                pPr.remove(elem)
+
+
 def set_far_east_font(run, font_name: str) -> None:
     """Set East Asian font via w:rFonts/@w:eastAsia."""
     rPr = _ensure_rPr(run)
@@ -131,13 +158,32 @@ def set_outline_level(paragraph, level_zero_indexed: int) -> None:
     outline.set(_ns("val"), str(level_zero_indexed))
 
 
-def get_effective_outline_level(paragraph, styles=None) -> int | None:
+def _get_para_style_id(para) -> str | None:
+    """Read paragraph style id directly from XML (fast path avoiding python-docx style lookup)."""
+    pPr = para._element.find(_ns("pPr"))
+    if pPr is None:
+        return None
+    pStyle = pPr.find(_ns("pStyle"))
+    if pStyle is None:
+        return None
+    return pStyle.get(_ns("val"))
+
+
+def get_effective_outline_level(paragraph, styles=None, _cache=None, _style_by_id=None) -> int | None:
     """Return the effective outline level (0-8) for a paragraph.
 
     Checks the paragraph's direct w:pPr/w:outlineLvl first, then falls back
     to the paragraph style (and its basedOn chain). Returns None if no
     outline level is found.
+
+    Optional _cache dict can be passed to memoize results by paragraph element id.
+    _style_by_id is a pre-built dict mapping style_id -> Style to avoid deprecated
+    python-docx style_id lookup.
     """
+    para_id = id(paragraph._element)
+    if _cache is not None and para_id in _cache:
+        return _cache[para_id]
+
     # 1. Direct paragraph-level outline
     pPr = paragraph._element.find(_ns("pPr"))
     if pPr is not None:
@@ -145,10 +191,30 @@ def get_effective_outline_level(paragraph, styles=None) -> int | None:
         if outline is not None:
             val = outline.get(_ns("val"))
             if val is not None:
-                return int(val)
+                result = int(val)
+                if _cache is not None:
+                    _cache[para_id] = result
+                return result
 
     # 2. Style-level outline (follow basedOn chain)
-    style = paragraph.style
+    # Fast path: read style id from XML directly instead of using paragraph.style
+    # which triggers an expensive O(n) lookup in the styles collection.
+    style_id = _get_para_style_id(paragraph)
+    style = None
+    if style_id is not None:
+        if _style_by_id is not None:
+            style = _style_by_id.get(style_id)
+        elif styles is not None:
+            # Deprecated fallback — may trigger warnings in newer python-docx
+            try:
+                style = styles[style_id]
+            except KeyError:
+                style = None
+        else:
+            style = paragraph.style
+
+    _styles_lookup = _style_by_id if _style_by_id is not None else styles
+
     while style is not None:
         style_pPr = style.element.find(_ns("pPr"))
         if style_pPr is not None:
@@ -156,20 +222,25 @@ def get_effective_outline_level(paragraph, styles=None) -> int | None:
             if outline is not None:
                 val = outline.get(_ns("val"))
                 if val is not None:
-                    return int(val)
+                    result = int(val)
+                    if _cache is not None:
+                        _cache[para_id] = result
+                    return result
 
         # Follow basedOn chain
         basedOn = style.element.find(_ns("basedOn"))
         if basedOn is None:
             break
         based_on_val = basedOn.get(_ns("val"))
-        if based_on_val is None or styles is None:
+        if based_on_val is None or _styles_lookup is None:
             break
         try:
-            style = styles[based_on_val]
+            style = _styles_lookup[based_on_val]
         except KeyError:
             break
 
+    if _cache is not None:
+        _cache[para_id] = None
     return None
 
 
@@ -237,7 +308,7 @@ def set_before_after_lines(paragraph_format, *, before_lines: float, after_lines
 from tvba_utils import cm_to_points
 
 
-def sync_numbering_with_titles(doc, settings) -> None:
+def sync_numbering_with_titles(doc, settings, *, _paragraphs=None) -> None:
     """Update numbering definitions so auto-generated list numbers match title formatting.
 
     When paragraphs use Word multilevel lists for headings, the numbers are
@@ -254,7 +325,8 @@ def sync_numbering_with_titles(doc, settings) -> None:
     # Collect numIds used by heading paragraphs (have outline level)
     heading_num_ids = set()
     W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
-    for para in doc.paragraphs:
+    paragraphs = _paragraphs if _paragraphs is not None else doc.paragraphs
+    for para in paragraphs:
         pPr = para._element.find(f".//{{{W}}}pPr")
         if pPr is None:
             continue
@@ -342,26 +414,47 @@ def sync_numbering_with_titles(doc, settings) -> None:
                     rPr.remove(b)
 
 
-def set_table_layout_window(table) -> None:
-    """Set table to autofit to window (AutoFitBehavior=2)."""
+def set_table_layout(table, mode: str) -> None:
+    """Set table column layout mode.
+
+    mode:
+      - "window"  — autofit to page width (w:tblLayout val="autofit", w:tblW 5000/auto)
+      - "content" — autofit to cell content (w:tblLayout val="autofit", w:tblW auto)
+      - "fixed"   — fixed column widths (w:tblLayout val="fixed")
+    """
     tblPr = table._element.find(_ns("tblPr"))
     if tblPr is None:
         tblPr = etree.SubElement(table._element, _ns("tblPr"))
+
+    # Layout algorithm
     layout = tblPr.find(_ns("tblLayout"))
     if layout is None:
         layout = etree.SubElement(tblPr, _ns("tblLayout"))
-    layout.set(_ns("val"), "autofit")
+    layout.set(_ns("val"), "fixed" if mode == "fixed" else "autofit")
+
+    # Table width
+    tblW = tblPr.find(_ns("tblW"))
+    if tblW is None:
+        tblW = etree.SubElement(tblPr, _ns("tblW"))
+    if mode == "window":
+        tblW.set(_ns("w"), "5000")
+        tblW.set(_ns("type"), "pct")
+    elif mode == "content":
+        tblW.set(_ns("w"), "0")
+        tblW.set(_ns("type"), "auto")
+    else:
+        tblW.set(_ns("w"), "0")
+        tblW.set(_ns("type"), "auto")
+
+
+def set_table_layout_window(table) -> None:
+    """Deprecated: use set_table_layout(table, 'window') instead."""
+    set_table_layout(table, "window")
 
 
 def set_table_layout_content(table) -> None:
-    """Set table to autofit to content (AutoFitBehavior=1)."""
-    tblPr = table._element.find(_ns("tblPr"))
-    if tblPr is None:
-        tblPr = etree.SubElement(table._element, _ns("tblPr"))
-    layout = tblPr.find(_ns("tblLayout"))
-    if layout is None:
-        layout = etree.SubElement(tblPr, _ns("tblLayout"))
-    layout.set(_ns("val"), "fixed")
+    """Deprecated: use set_table_layout(table, 'fixed') instead."""
+    set_table_layout(table, "fixed")
 
 
 def set_table_borders(table, *, line_width_pt: float) -> None:
@@ -381,6 +474,50 @@ def set_table_borders(table, *, line_width_pt: float) -> None:
         border.set(_ns("sz"), sz)
         border.set(_ns("space"), "0")
         border.set(_ns("color"), "auto")
+
+
+def set_table_alignment(table, alignment: str = "center") -> None:
+    """Set table horizontal alignment via w:tblPr/w:jc.
+
+    alignment: "left", "center", "right"
+    """
+    tblPr = table._element.find(_ns("tblPr"))
+    if tblPr is None:
+        tblPr = etree.SubElement(table._element, _ns("tblPr"))
+    jc = tblPr.find(_ns("jc"))
+    if jc is None:
+        jc = etree.SubElement(tblPr, _ns("jc"))
+    jc.set(_ns("val"), alignment)
+
+
+def set_snap_to_grid(para, enabled: bool = True) -> None:
+    """Set w:snapToGrid on paragraph for grid alignment."""
+    pPr = para._element.find(_ns("pPr"))
+    if pPr is None:
+        pPr = etree.SubElement(para._element, _ns("pPr"))
+    snap = pPr.find(_ns("snapToGrid"))
+    if enabled:
+        if snap is None:
+            snap = etree.SubElement(pPr, _ns("snapToGrid"))
+        snap.set(_ns("val"), "true")
+    else:
+        if snap is not None:
+            pPr.remove(snap)
+
+
+def set_auto_space_de(para, enabled: bool = True) -> None:
+    """Set w:autoSpaceDE (auto adjust right indent for East Asian text)."""
+    pPr = para._element.find(_ns("pPr"))
+    if pPr is None:
+        pPr = etree.SubElement(para._element, _ns("pPr"))
+    auto = pPr.find(_ns("autoSpaceDE"))
+    if enabled:
+        if auto is None:
+            auto = etree.SubElement(pPr, _ns("autoSpaceDE"))
+        auto.set(_ns("val"), "true")
+    else:
+        if auto is not None:
+            pPr.remove(auto)
 
 
 def set_row_height_at_least(row, height_cm: float) -> None:

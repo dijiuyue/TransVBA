@@ -37,7 +37,8 @@ class SettingsRepository:
     def _from_dict(self, data: dict) -> FormatSettings:
         from tvba_settings import (
             BodySettings, TitleLevelSettings, TableSettings,
-            FigureSettings, TocLegacyFixedDefaults,
+            FigureSettings, TocLegacyFixedDefaults, ValidationRules,
+            CoverSettings, AppendixSettings, HeaderSettings,
         )
         titles = tuple(
             TitleLevelSettings(**t) for t in data.get("titles", [])
@@ -49,17 +50,37 @@ class SettingsRepository:
         if "special_indent_cm" in body_data and "special_indent_chars" not in body_data:
             from tvba_utils import cm_to_points
             body_data["special_indent_chars"] = cm_to_points(body_data.pop("special_indent_cm")) / 12.0
+
+        validation_data = data.get("validation", {})
+        forbidden = validation_data.pop("forbidden_words", [])
+        if isinstance(forbidden, list):
+            validation_data["forbidden_words"] = tuple(forbidden)
+
         return FormatSettings(
+            template_name=data.get("template_name", "general_spec"),
+            validation=ValidationRules(**validation_data),
             body=BodySettings(**body_data),
             titles=titles,
-            table=TableSettings(**data.get("table", {})),
+            table=_table_from_dict(data.get("table", {})),
             figure=FigureSettings(**data.get("figure", {})),
             toc=TocLegacyFixedDefaults(**data.get("toc", {})),
+            cover=CoverSettings(**data.get("cover", {})),
+            appendix=AppendixSettings(**data.get("appendix", {})),
+            header=HeaderSettings(**data.get("header", {})),
             auto_detect_numeric_titles=data.get("auto_detect_numeric_titles", True),
             auto_detect_include_list_paragraphs=data.get("auto_detect_include_list_paragraphs", True),
             remember_settings=data.get("remember_settings", True),
             prefer_com_resolver=data.get("prefer_com_resolver", False),
         )
+
+
+def _table_from_dict(data: dict) -> "TableSettings":
+    """Build TableSettings from dict with backward compat for auto_fit_window."""
+    from tvba_settings import TableSettings
+    if "auto_fit_mode" not in data:
+        old_val = data.pop("auto_fit_window", True)
+        data["auto_fit_mode"] = "window" if old_val else "fixed"
+    return TableSettings(**data)
 
 
 def load_settings(path: Path | None = None) -> FormatSettings:

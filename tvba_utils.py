@@ -59,9 +59,11 @@ def points_to_cm(points: float) -> float:
     return points / 28.3465
 
 
-def clean_para_text(text: str) -> str:
+def clean_para_text(text: str | None) -> str:
     """Strip whitespace and normalize paragraph text for matching.
 
     Corresponds to VBA CleanParaText.
     """
+    if text is None:
+        return ""
     return text.strip().replace("\r", "").replace("\n", "")

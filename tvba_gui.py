@@ -6,6 +6,7 @@ Corresponds to VBA UserForm1.frm:
   - btnApply_Click / btnOK_Click / btnCancel_Click
   - LoadSettingsToForm / SetEditingEnabled
 """
+import os
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 from pathlib import Path
@@ -33,6 +34,19 @@ class TvbaMainWindow(tk.Tk):
         self.lbl_file = ttk.Label(top_frame, text="(未选择文件)")
         self.lbl_file.pack(side=tk.LEFT, padx=5)
 
+        # Template selector
+        from tvba_templates import TemplateManager
+        templates = TemplateManager.list_templates()
+        template_names = [t["name"] for t in templates]
+        self._template_ids = [t["id"] for t in templates]
+
+        ttk.Label(top_frame, text="模板标准：").pack(side=tk.LEFT, padx=(15, 2))
+        self.cmb_template = ttk.Combobox(top_frame, values=template_names, state="readonly", width=22)
+        if template_names:
+            self.cmb_template.current(0)
+        self.cmb_template.pack(side=tk.LEFT, padx=2)
+        self.cmb_template.bind("<<ComboboxSelected>>", self._on_template_change)
+
         # Main paned window
         paned = ttk.PanedWindow(self, orient=tk.HORIZONTAL)
         paned.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
@@ -46,7 +60,7 @@ class TvbaMainWindow(tk.Tk):
 
         # Tree items
         self.tree.insert("", "end", "body", text="正文")
-        self.tree.insert("", "end", "titles", text="标题")
+        self.tree.insert("", "end", "titles", text="标题", open=True)
         for i in range(1, 6):
             self.tree.insert("titles", "end", f"title_{i}", text=f"  {i}级标题")
         self.tree.insert("", "end", "table", text="表格")
@@ -100,6 +114,7 @@ class TvbaMainWindow(tk.Tk):
         ttk.Button(bottom_frame, text="取消", command=self._on_cancel).pack(side=tk.RIGHT, padx=5)
         ttk.Button(bottom_frame, text="应用", command=self._on_apply).pack(side=tk.RIGHT, padx=5)
         ttk.Button(bottom_frame, text="应用并关闭", command=self._on_apply_close).pack(side=tk.RIGHT, padx=5)
+        ttk.Button(bottom_frame, text="格式检查", command=self._on_validate).pack(side=tk.RIGHT, padx=5)
 
         # Progress bar
         self.progress = ttk.Progressbar(self, mode="determinate", maximum=100)
@@ -124,7 +139,7 @@ class TvbaMainWindow(tk.Tk):
 
     def _build_placeholder_panel(self):
         frame = ttk.Frame(self.detail_frame)
-        ttk.Label(frame, text="(此面板尚未实现)").pack(pady=20)
+        ttk.Label(frame, text="请在左侧选择你想要修改的标题级别").pack(pady=20)
         return frame
 
     def _build_body_panel(self):
@@ -288,9 +303,9 @@ class TvbaMainWindow(tk.Tk):
         self.spn_table_spacing.grid(row=row, column=1, sticky=tk.EW, padx=5, pady=3)
 
         row += 1
-        ttk.Label(frame, text="自动适应窗口:").grid(row=row, column=0, sticky=tk.W, padx=5, pady=3)
-        self.var_table_auto_fit = tk.BooleanVar()
-        ttk.Checkbutton(frame, variable=self.var_table_auto_fit).grid(row=row, column=1, sticky=tk.W, padx=5, pady=3)
+        ttk.Label(frame, text="列宽模式:").grid(row=row, column=0, sticky=tk.W, padx=5, pady=3)
+        self.cmb_table_layout = ttk.Combobox(frame, values=["适应窗口", "适应内容", "固定列宽"], state="readonly")
+        self.cmb_table_layout.grid(row=row, column=1, sticky=tk.EW, padx=5, pady=3)
 
         return frame
 
@@ -417,7 +432,8 @@ class TvbaMainWindow(tk.Tk):
             self.spn_table_line_width.set(str(s.table.line_width_pt))
             self.spn_table_row_height.set(str(s.table.row_height_cm))
             self.spn_table_spacing.set(str(s.table.spacing))
-            self.var_table_auto_fit.set(s.table.auto_fit_window)
+            layout_map = {"window": "适应窗口", "content": "适应内容", "fixed": "固定列宽"}
+            self.cmb_table_layout.set(layout_map.get(s.table.auto_fit_mode, "适应窗口"))
 
         # Figure
         if hasattr(self, "cmb_figure_title_font"):
@@ -432,6 +448,55 @@ class TvbaMainWindow(tk.Tk):
             self.var_include_list.set(s.auto_detect_include_list_paragraphs)
             self.chk_remember.set(s.remember_settings)
             self.var_com_resolver.set(s.prefer_com_resolver)
+
+    def _on_template_change(self, event):
+        idx = self.cmb_template.current()
+        if idx < 0 or idx >= len(self._template_ids):
+            return
+        template_id = self._template_ids[idx]
+        self.controller.switch_template(template_id)
+        self._populate_from_settings()
+        self.status.config(text=f"已切换模板: {self.cmb_template.get()}")
+
+    def _on_validate(self):
+        if self.controller.opened_file is None:
+            messagebox.showwarning("提示", "请先打开一个 Word 文档")
+            return
+
+        try:
+            self._sync_settings_to_controller()
+        except Exception as e:
+            self.status.config(text="错误: 同步设置失败")
+            return
+
+        self.status.config(text="正在检查格式...")
+        self.progress["value"] = 0
+        self.update()
+
+        from tvba_core_validate import validate_document
+        issues = validate_document(
+            self.controller.opened_file,
+            self.controller.settings,
+            progress_cb=lambda msg, pct: (
+                self.status.config(text=msg),
+                self.progress.config(value=int(pct * 100)),
+                self.update()
+            ) and None
+        )
+
+        if not issues:
+            self.status.config(text="格式检查通过")
+            messagebox.showinfo("格式检查", "未发现问题，格式检查通过！")
+        else:
+            self.status.config(text=f"发现 {len(issues)} 个问题")
+            lines = [f"共发现 {len(issues)} 个格式问题：", ""]
+            for issue in issues[:50]:
+                lines.append(f"[{issue.severity}] {issue.description}")
+                if issue.location:
+                    lines.append(f"  位置: {issue.location}")
+            if len(issues) > 50:
+                lines.append(f"  ... 还有 {len(issues) - 50} 个问题")
+            messagebox.showwarning("格式检查结果", "\n".join(lines))
 
     def _on_open(self):
         path = filedialog.askopenfilename(
@@ -470,6 +535,7 @@ class TvbaMainWindow(tk.Tk):
                 time_str = f"{result.elapsed_ms} 毫秒"
             else:
                 time_str = f"{result.elapsed_ms / 1000:.2f} 秒"
+            os.startfile(str(result.output_path))
             messagebox.showinfo("完成", f"格式刷新成功！\n耗时: {time_str}")
         else:
             self.status.config(text=f"错误: {result.message}")
@@ -606,7 +672,10 @@ class TvbaMainWindow(tk.Tk):
             fval = _safe_float(self.spn_table_spacing)
             if fval is not None:
                 self.controller.update_setting("table.spacing", fval)
-            self.controller.update_setting("table.auto_fit_window", self.var_table_auto_fit.get())
+            layout_map = {"适应窗口": "window", "适应内容": "content", "固定列宽": "fixed"}
+            layout_val = _safe_get(self.cmb_table_layout)
+            if layout_val:
+                self.controller.update_setting("table.auto_fit_mode", layout_map.get(layout_val, "window"))
 
         # Sync figure settings
         if hasattr(self, "cmb_figure_title_font"):

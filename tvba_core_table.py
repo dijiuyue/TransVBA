@@ -8,9 +8,9 @@ Corresponds to VBA FormatModule.bas:
   - IsTableCaptionLine
 """
 from tvba_core_oox import (
-    set_table_layout_window,
-    set_table_layout_content,
+    set_table_layout,
     set_table_borders,
+    set_table_alignment,
     set_row_height_at_least,
     apply_indent_chars,
     set_before_after_lines,
@@ -34,11 +34,12 @@ def is_table_caption_line(text: str) -> bool:
     return bool(_TABLE_CAPTION_RE.match(text))
 
 
-def find_table_caption(table, doc, max_up_paragraphs: int = 10):
+def find_table_caption(table, doc, max_up_paragraphs: int = 10, *, _tables=None, _paragraphs=None):
     """Find the caption paragraph preceding a table."""
     # Find table index in document
+    tables = _tables if _tables is not None else doc.tables
     table_index = None
-    for i, t in enumerate(doc.tables):
+    for i, t in enumerate(tables):
         if t._element is table._element:
             table_index = i
             break
@@ -55,11 +56,12 @@ def find_table_caption(table, doc, max_up_paragraphs: int = 10):
             paragraphs_before += 1
 
     # Search backwards up to max_up_paragraphs
+    paragraphs = _paragraphs if _paragraphs is not None else doc.paragraphs
     for i in range(1, max_up_paragraphs + 1):
         idx = paragraphs_before - i
         if idx < 0:
             break
-        para = doc.paragraphs[idx]
+        para = paragraphs[idx]
         if is_table_caption_line(para.text):
             return para
 
@@ -92,6 +94,8 @@ def find_table_caption(table, doc, max_up_paragraphs: int = 10):
 
 def apply_table_caption(para, settings) -> None:
     """Apply formatting to a table caption paragraph."""
+    # Normalize space between number and caption text: "表 1-1  测试" → "表 1-1 测试"
+    _normalize_caption_space(para)
     format_all_runs_in_paragraph(
         para,
         ascii_font="Times New Roman",
@@ -131,11 +135,11 @@ def apply_table_caption(para, settings) -> None:
 
 def apply_table_body(table, settings) -> None:
     """Apply formatting to table body."""
-    # Auto fit
-    if settings.auto_fit_window:
-        set_table_layout_window(table)
-    else:
-        set_table_layout_content(table)
+    # Table centering
+    set_table_alignment(table, "center")
+
+    # Column layout mode
+    set_table_layout(table, settings.auto_fit_mode)
 
     # Borders
     set_table_borders(table, line_width_pt=settings.line_width_pt)
@@ -144,8 +148,10 @@ def apply_table_body(table, settings) -> None:
     for row in table.rows:
         set_row_height_at_least(row, settings.row_height_cm)
 
-    # Cell font
-    for row in table.rows:
+    # Cell font — first row (header) bold, rest normal
+    for row_idx, row in enumerate(table.rows):
+        bold_row = (row_idx == 0)
+        row_spacing = 1.0 if bold_row else settings.spacing  # 单倍 for header row
         for cell in row.cells:
             for para in cell.paragraphs:
                 format_all_runs_in_paragraph(
@@ -153,7 +159,7 @@ def apply_table_body(table, settings) -> None:
                     ascii_font="Times New Roman",
                     eastasia_font=settings.body_font,
                     size_pt=size_label_to_points(settings.body_size),
-                    bold=False,
+                    bold=bold_row,
                 )
                 # Line spacing
                 pPr = para._element.find(".//w:pPr", {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"})
@@ -163,14 +169,31 @@ def apply_table_body(table, settings) -> None:
                     spacing = pPr.find(f"{{{W}}}spacing")
                     if spacing is None:
                         spacing = etree.SubElement(pPr, f"{{{W}}}spacing")
-                    spacing.set(f"{{{W}}}line", str(int(settings.spacing * 240)))
+                    spacing.set(f"{{{W}}}line", str(int(row_spacing * 240)))
                     spacing.set(f"{{{W}}}lineRule", "auto")
 
 
-def refresh_all(doc, settings) -> None:
+def _normalize_caption_space(para) -> None:
+    """Ensure exactly one space between caption number and title text.
+
+    "表 1-1    测试" or "表 1-1\t测试" → "表 1-1 测试"
+
+    Only normalizes when the full caption is within a single run,
+    to avoid corrupting multi-run paragraphs.
+    """
+    import re
+    for run in para.runs:
+        m = re.match(r'^([表图]\s*\d+(?:\.\d+)*-\d+)(\s{2,})(.+)$', run.text)
+        if m:
+            run.text = m.group(1) + ' ' + m.group(3)
+            return
+
+
+def refresh_all(doc, settings, *, _paragraphs=None, _tables=None) -> None:
     """Refresh all tables and their captions."""
-    for table in doc.tables:
-        caption = find_table_caption(table, doc)
+    tables = _tables if _tables is not None else doc.tables
+    for table in tables:
+        caption = find_table_caption(table, doc, _tables=tables, _paragraphs=_paragraphs)
         if caption is not None:
             apply_table_caption(caption, settings)
         apply_table_body(table, settings)

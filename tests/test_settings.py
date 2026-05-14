@@ -42,6 +42,59 @@ class TestBodySettings:
             b.font = "黑体"
 
 
+class TestCoverSettings:
+    def test_defaults(self):
+        from tvba_settings import CoverSettings
+        c = CoverSettings()
+        assert c.font == "宋体"
+        assert c.size == "二号"
+        assert c.bold is True
+        assert c.line_spacing == 1.5
+        assert c.alignment == "居中"
+
+    def test_frozen_cannot_mutate(self):
+        from tvba_settings import CoverSettings
+        c = CoverSettings()
+        with pytest.raises(AttributeError):
+            c.font = "黑体"
+
+
+class TestAppendixSettings:
+    def test_defaults(self):
+        from tvba_settings import AppendixSettings
+        a = AppendixSettings()
+        assert a.title_font == "宋体"
+        assert a.title_size == "小四"
+        assert a.title_bold is True
+        assert a.title_line_spacing == 1.5
+        assert a.body_font == "宋体"
+        assert a.body_size == "小五"
+        assert a.body_bold is False
+        assert a.body_line_spacing == 1.0
+
+    def test_frozen_cannot_mutate(self):
+        from tvba_settings import AppendixSettings
+        a = AppendixSettings()
+        with pytest.raises(AttributeError):
+            a.title_font = "黑体"
+
+
+class TestHeaderSettings:
+    def test_defaults(self):
+        from tvba_settings import HeaderSettings
+        h = HeaderSettings()
+        assert h.font == "宋体"
+        assert h.size == "小五"
+        assert h.bold is False
+        assert h.line_spacing == 1.0
+
+    def test_frozen_cannot_mutate(self):
+        from tvba_settings import HeaderSettings
+        h = HeaderSettings()
+        with pytest.raises(AttributeError):
+            h.font = "黑体"
+
+
 class TestFormatSettings:
     def test_defaults(self):
         fs = FormatSettings()
@@ -51,6 +104,13 @@ class TestFormatSettings:
         assert fs.auto_detect_numeric_titles is True
         assert fs.auto_detect_include_list_paragraphs is True
         assert fs.remember_settings is True
+
+    def test_has_cover_appendix_header(self):
+        from tvba_settings import CoverSettings, AppendixSettings, HeaderSettings
+        fs = FormatSettings()
+        assert isinstance(fs.cover, CoverSettings)
+        assert isinstance(fs.appendix, AppendixSettings)
+        assert isinstance(fs.header, HeaderSettings)
 
     def test_titles_are_independent(self):
         fs = FormatSettings()
@@ -63,3 +123,6 @@ class TestFormatSettings:
         assert "titles" in d
         assert len(d["titles"]) == 5
         assert d["auto_detect_numeric_titles"] is True
+        assert "cover" in d
+        assert "appendix" in d
+        assert "header" in d

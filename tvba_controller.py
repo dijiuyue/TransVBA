@@ -3,6 +3,7 @@
 Completely independent of Tkinter. Testable with mock applier.
 """
 import time
+import traceback
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Callable, Protocol
@@ -38,10 +39,12 @@ class DocumentApplier(Protocol):
 
 
 class TvbaController:
-    def __init__(self, repo: SettingsRepository, applier: DocumentApplier):
+    def __init__(self, repo: SettingsRepository, applier: DocumentApplier,
+                 default_settings: FormatSettings | None = None):
         self._repo = repo
         self._applier = applier
-        self._settings = repo.load()
+        saved = repo.load()
+        self._settings = saved if saved != FormatSettings() else (default_settings or saved)
         self._opened_file: Path | None = None
 
     @property
@@ -54,6 +57,11 @@ class TvbaController:
 
     def open_file(self, path: Path) -> None:
         self._opened_file = path
+
+    def switch_template(self, template_id: str) -> FormatSettings:
+        from tvba_templates import TemplateManager
+        self._settings = TemplateManager.load_template(template_id)
+        return self._settings
 
     def update_setting(self, path: str, value: Any) -> ValidationResult:
         """Update a setting by dotted path like 'body.font' or 'titles.0.size'."""
@@ -99,7 +107,7 @@ class TvbaController:
                 )
                 return ValidationResult(valid=True)
 
-            elif parts[0] in ("auto_detect_numeric_titles", "auto_detect_include_list_paragraphs", "remember_settings", "prefer_com_resolver") and len(parts) == 1:
+            elif parts[0] in ("auto_detect_numeric_titles", "auto_detect_include_list_paragraphs", "remember_settings", "prefer_com_resolver", "template_name") and len(parts) == 1:
                 self._settings = replace(
                     self._settings,
                     **{parts[0]: value},
@@ -115,11 +123,16 @@ class TvbaController:
         if self._opened_file is None:
             return ApplyResult(success=False, message="No file opened")
 
+        stem = self._opened_file.stem
+        suffix = self._opened_file.suffix
+        output_path = self._opened_file.parent / f"{stem}+格式修改后{suffix}"
+
         start = time.perf_counter()
         try:
             out = self._applier(
                 self._opened_file,
                 self._settings,
+                output_path=output_path,
                 progress_cb=progress_cb,
             )
             elapsed_ms = int((time.perf_counter() - start) * 1000)
@@ -128,7 +141,8 @@ class TvbaController:
             return ApplyResult(success=True, output_path=out, elapsed_ms=elapsed_ms)
         except Exception as e:
             elapsed_ms = int((time.perf_counter() - start) * 1000)
-            return ApplyResult(success=False, message=str(e), elapsed_ms=elapsed_ms)
+            tb = traceback.format_exc()
+            return ApplyResult(success=False, message=f"{e}\n\n{tb}", elapsed_ms=elapsed_ms)
 
     def reset_to_defaults(self) -> None:
         self._settings = FormatSettings()

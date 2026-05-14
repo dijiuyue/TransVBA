@@ -6,6 +6,26 @@ from dataclasses import dataclass, field
 
 
 @dataclass(frozen=True)
+class ValidationRules:
+    """Per-template validation rules for format checking."""
+    check_table_row_height: bool = False
+    check_table_font_size: bool = False
+    check_cover_title_size: bool = False
+    check_appendix_body_size: bool = False
+    check_grid_alignment: bool = False
+    check_chairman_number: bool = False
+    check_appendix_colon: bool = False
+    check_figure_table_space: bool = False
+    check_forbidden_words: bool = False
+    forbidden_words: tuple[str, ...] = ()
+    check_figure_position: bool = False
+    check_brackets: bool = False
+    check_period: bool = False
+    check_ascii_font: bool = False
+    check_chinese_font: bool = False
+
+
+@dataclass(frozen=True)
 class TitleLevelSettings:
     """Single title level settings."""
     alignment: str = "左对齐"
@@ -48,7 +68,7 @@ class TableSettings:
     line_width_pt: float = 0.5
     row_height_cm: float = 0.7
     spacing: float = 1.0
-    auto_fit_window: bool = True
+    auto_fit_mode: str = "window"
 
 
 @dataclass(frozen=True)
@@ -62,6 +82,43 @@ class FigureSettings:
     title_right_indent_cm: float = 0.0
     title_special_indent: str = "无"
     title_special_indent_cm: float = 0.0
+
+
+@dataclass(frozen=True)
+class CoverSettings:
+    """Cover page title formatting — Mode B: 二号/加粗/居中."""
+
+    font: str = "宋体"
+    size: str = "二号"
+    bold: bool = True
+    line_spacing: float = 1.5
+    alignment: str = "居中"
+    max_length: int = 80
+    search_paragraphs: int = 15
+
+
+@dataclass(frozen=True)
+class AppendixSettings:
+    """Appendix formatting — Mode B: 标题小四加粗/正文小五单倍."""
+
+    title_font: str = "宋体"
+    title_size: str = "小四"
+    title_bold: bool = True
+    title_line_spacing: float = 1.5
+    body_font: str = "宋体"
+    body_size: str = "小五"
+    body_bold: bool = False
+    body_line_spacing: float = 1.0
+
+
+@dataclass(frozen=True)
+class HeaderSettings:
+    """Header formatting — 小五/单倍/常规."""
+
+    font: str = "宋体"
+    size: str = "小五"
+    bold: bool = False
+    line_spacing: float = 1.0
 
 
 @dataclass(frozen=True)
@@ -92,6 +149,12 @@ class FormatSettings:
     table: TableSettings = field(default_factory=TableSettings)
     figure: FigureSettings = field(default_factory=FigureSettings)
     toc: TocLegacyFixedDefaults = field(default_factory=TocLegacyFixedDefaults)
+    cover: CoverSettings = field(default_factory=CoverSettings)
+    appendix: AppendixSettings = field(default_factory=AppendixSettings)
+    header: HeaderSettings = field(default_factory=HeaderSettings)
+
+    template_name: str = "general_spec"
+    validation: ValidationRules = field(default_factory=ValidationRules)
 
     auto_detect_numeric_titles: bool = True
     auto_detect_include_list_paragraphs: bool = True

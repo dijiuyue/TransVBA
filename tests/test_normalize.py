@@ -61,21 +61,21 @@ class TestApplyBrackets:
 class TestAddPeriodIfNeeded:
     def test_adds_period_when_missing(self):
         doc = Document()
-        para = doc.add_paragraph("1 标题")
+        para = doc.add_paragraph("(1) 标题")
         add_period_if_needed(para)
         assert para.text.endswith("。")
 
     def test_skips_if_already_has_chinese_period(self):
         doc = Document()
-        para = doc.add_paragraph("1 标题。")
+        para = doc.add_paragraph("(1) 标题。")
         add_period_if_needed(para)
-        assert para.text == "1 标题。"
+        assert para.text == "(1) 标题。"
 
     def test_skips_if_ends_with_exclamation(self):
         doc = Document()
-        para = doc.add_paragraph("1 标题！")
+        para = doc.add_paragraph("(1) 标题！")
         add_period_if_needed(para)
-        assert para.text == "1 标题！"
+        assert para.text == "(1) 标题！"
 
     def test_skips_if_ends_with_question_mark(self):
         doc = Document()

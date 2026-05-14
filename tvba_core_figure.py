@@ -25,6 +25,7 @@ def is_figure_caption_line(text: str) -> bool:
 
 def apply_figure_caption(para, settings) -> None:
     """Apply formatting to a figure caption paragraph."""
+    _normalize_caption_space(para)
     format_all_runs_in_paragraph(
         para,
         ascii_font="Times New Roman",
@@ -62,8 +63,15 @@ def apply_figure_caption(para, settings) -> None:
         spacing.set(f"{{{W}}}lineRule", "auto")
 
 
-def refresh_all(doc, settings) -> None:
+def _normalize_caption_space(para) -> None:
+    """Ensure exactly one space between caption number and title text."""
+    from tvba_core_table import _normalize_caption_space as _impl
+    _impl(para)
+
+
+def refresh_all(doc, settings, *, _paragraphs=None) -> None:
     """Refresh all figure captions in document."""
-    for para in doc.paragraphs:
+    paragraphs = _paragraphs if _paragraphs is not None else doc.paragraphs
+    for para in paragraphs:
         if is_figure_caption_line(para.text):
             apply_figure_caption(para, settings)

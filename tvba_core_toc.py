@@ -18,45 +18,77 @@ from tvba_utils import clean_para_text, size_label_to_points
 # Matches numeric prefix like "1", "1.1", "1.1.2" (halfwidth or fullwidth digits/dots)
 _TOC_NUMBER_RE = re.compile(r"^([\d０-９]+([\.．][\d０-９]+){0,6})[ \t]*")
 
+# Matches TOC title: "目录" or "目  录" (characters separated by any whitespace)
+_TOC_TITLE_RE = re.compile(r"^目\s+录$")
+
+# Matches space-separated TOC entries: number + 2+ spaces + text + 2+ spaces + page number
+_TOC_ENTRY_SPACE_RE = re.compile(
+    r"^[\d０-９]+[\.．\d０-９]*\s{2,}.+\s{2,}\d+$"
+)
+
 
 def is_toc_entry_line(text: str) -> bool:
     """Check if text is a TOC entry: contains Tab and last token is numeric."""
     text = clean_para_text(text)
-    if "\t" not in text:
-        return False
-    parts = text.split("\t")
-    # Last non-empty part should be a number
-    last = parts[-1].strip()
-    if not last:
-        return False
-    # Remove trailing \r if any
-    last = last.replace("\r", "").strip()
-    try:
-        float(last)
+    # Tab-separated entries (standard Word TOC format)
+    if "\t" in text:
+        parts = text.split("\t")
+        last = parts[-1].strip()
+        if not last:
+            return False
+        last = last.replace("\r", "").strip()
+        try:
+            float(last)
+            return True
+        except ValueError:
+            return False
+    # Space-separated entries: number + 2+ spaces + text + 2+ spaces + page number
+    if _TOC_ENTRY_SPACE_RE.match(text):
         return True
-    except ValueError:
-        return False
+    return False
 
 
 def is_toc_title_line(text: str) -> bool:
-    """Check if text is the TOC title ('目录')."""
-    return clean_para_text(text) == "目录"
+    """Check if text is the TOC title ('目录' or '目  录' with spacing)."""
+    text = clean_para_text(text)
+    return text == "目录" or bool(_TOC_TITLE_RE.match(text))
 
 
-def is_toc_paragraph(para) -> bool:
+def _get_para_style_id(para) -> str | None:
+    """Fast path: read paragraph style id directly from XML."""
+    from lxml import etree
+    W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+    pPr = para._element.find(f".//{{{W}}}pPr")
+    if pPr is None:
+        return None
+    pStyle = pPr.find(f"{{{W}}}pStyle")
+    if pStyle is None:
+        return None
+    return pStyle.get(f"{{{W}}}val")
+
+
+def is_toc_paragraph(para, _toc_style_ids=None) -> bool:
     """Check if paragraph is part of TOC (entry or title).
 
     Returns True if the text looks like a TOC entry/title, OR if the
-    paragraph's style name contains "TOC" (case-insensitive).
+    paragraph's style id contains "TOC" (case-insensitive).
+
+    Optional _toc_style_ids is a set of style ids whose style names contain
+    "toc" — provided as a fast-path alternative to expensive paragraph.style lookup.
     """
     text = clean_para_text(para.text)
     if is_toc_entry_line(text) or is_toc_title_line(text):
         return True
-    # Check paragraph style name for TOC styles (TOC1, TOC2, TOC3, etc.)
-    style_name = ""
-    if para.style and para.style.name:
-        style_name = para.style.name
-    return "toc" in style_name.lower()
+    # Fast path: read style id directly from XML to avoid expensive
+    # python-docx paragraph.style lookup which traverses the entire styles collection.
+    style_id = _get_para_style_id(para)
+    if style_id and "toc" in style_id.lower():
+        return True
+    # Fallback: check against pre-built set of TOC style ids (covers cases
+    # where style id doesn't contain "toc" but style name does, e.g. custom styles).
+    if _toc_style_ids and style_id in _toc_style_ids:
+        return True
+    return False
 
 
 def identify_toc_level(text: str) -> int:
@@ -95,6 +127,7 @@ def identify_toc_level(text: str) -> int:
 
 def apply_toc_title_style(para, defaults) -> None:
     """Apply TOC title formatting."""
+    para.alignment = 1  # Center
     for run in para.runs:
         set_ascii_font(run, "Times New Roman")
         set_far_east_font(run, defaults.title_font)
@@ -143,9 +176,10 @@ def apply_toc_entry_style(doc, para, level: int, defaults) -> None:
             run.font.bold = bold
 
 
-def refresh_toc(doc, defaults) -> None:
+def refresh_toc(doc, defaults, *, _paragraphs=None) -> None:
     """Refresh all TOC paragraphs in document."""
-    for para in doc.paragraphs:
+    paragraphs = _paragraphs if _paragraphs is not None else doc.paragraphs
+    for para in paragraphs:
         text = clean_para_text(para.text)
         if is_toc_title_line(text):
             apply_toc_title_style(para, defaults)

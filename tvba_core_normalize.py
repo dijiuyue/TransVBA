@@ -7,21 +7,24 @@ Corresponds to VBA FormatModule.bas:
   - SyncNumberFontWithBody
 """
 import re
+from copy import deepcopy
 
 from tvba_core_oox import set_ascii_font
 
 _ASCII_RE = re.compile(r"[\x00-\x7F]+")
 
 
-def unify_ascii_font(doc, font_name: str = "Times New Roman") -> None:
+def unify_ascii_font(doc, font_name: str = "Times New Roman", *, _paragraphs=None, _tables=None) -> None:
     """Set all ASCII-only runs to the specified font."""
-    for para in doc.paragraphs:
+    paragraphs = _paragraphs if _paragraphs is not None else doc.paragraphs
+    for para in paragraphs:
         for run in para.runs:
             text = run.text
             if text and all(ord(c) < 128 for c in text):
                 set_ascii_font(run, font_name)
         # Also handle table cells
-    for table in doc.tables:
+    tables = _tables if _tables is not None else doc.tables
+    for table in tables:
         for row in table.rows:
             for cell in row.cells:
                 for para in cell.paragraphs:
@@ -35,12 +38,21 @@ _BRACKET_RE = re.compile(r"[（(].*?[）)]")
 
 
 def apply_brackets(para, text: str) -> None:
-    """Make text within brackets bold.
+    """Convert halfwidth brackets to fullwidth and make bracketed text bold.
 
     Finds the first occurrence of bracketed text using fullwidth
-    （…）or halfwidth (…) brackets and applies bold formatting.
+    （…）or halfwidth (…) brackets, converts halfwidth brackets to
+    fullwidth, and applies bold formatting.
     Only processes the first occurrence per paragraph (VBA behavior).
     """
+    # First pass: convert halfwidth brackets to fullwidth in all runs
+    for run in para.runs:
+        run_text = run.text
+        if run_text and ('(' in run_text or ')' in run_text):
+            run.text = run_text.replace('(', '（').replace(')', '）')
+
+    # Re-read text after conversion
+    text = para.text
     m = _BRACKET_RE.search(text)
     if not m:
         return
@@ -84,14 +96,25 @@ def apply_brackets(para, text: str) -> None:
                 from lxml import etree
                 W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
 
+                # Clone the original run's formatting (rPr) so new runs
+                # inherit font, size, etc. set by format_all_runs_in_paragraph.
+                orig_rPr = run._element.find(f"{{{W}}}rPr")
+
                 # Clear current run text to 'before'
                 run.text = before
 
                 # Create bold run for bracketed text
                 r_elem = run._element
                 new_r = etree.Element(f"{{{W}}}r")
-                rPr = etree.SubElement(new_r, f"{{{W}}}rPr")
-                b = etree.SubElement(rPr, f"{{{W}}}b")
+                if orig_rPr is not None:
+                    new_rPr = deepcopy(orig_rPr)
+                    new_r.append(new_rPr)
+                else:
+                    new_rPr = etree.SubElement(new_r, f"{{{W}}}rPr")
+                # Ensure bold is set
+                b = new_rPr.find(f"{{{W}}}b")
+                if b is None:
+                    etree.SubElement(new_rPr, f"{{{W}}}b")
                 t = etree.SubElement(new_r, f"{{{W}}}t")
                 t.text = bracketed
                 r_elem.addnext(new_r)
@@ -99,6 +122,11 @@ def apply_brackets(para, text: str) -> None:
                 # Create normal run for after text
                 if after:
                     after_r = etree.Element(f"{{{W}}}r")
+                    if orig_rPr is not None:
+                        after_rPr = deepcopy(orig_rPr)
+                        after_r.append(after_rPr)
+                    else:
+                        after_rPr = etree.SubElement(after_r, f"{{{W}}}rPr")
                     t_after = etree.SubElement(after_r, f"{{{W}}}t")
                     t_after.text = after
                     new_r.addnext(after_r)
@@ -112,9 +140,10 @@ def apply_brackets(para, text: str) -> None:
 
 
 def add_period_if_needed(para) -> None:
-    """Add Chinese period to paragraph if it doesn't end with punctuation.
+    """Add Chinese period to list-item paragraphs missing end punctuation.
 
-    Skips empty paragraphs and TOC lines.
+    Skips empty paragraphs, TOC lines, and title-like paragraphs
+    (number or number.number followed by space).
     """
     from tvba_core_toc import is_toc_paragraph
 
@@ -129,6 +158,19 @@ def add_period_if_needed(para) -> None:
     if not stripped:
         return
 
+    # Skip title-like paragraphs (e.g. "1 概述", "2.1 分析")
+    if re.match(r'^\d+(\.\d+)*\s+\S', stripped):
+        return
+
+    # Only process list-item patterns: (1), 1), （1）, a., a)
+    is_list_item = (
+        re.match(r'^[\(\（]\d+[\)\）]', stripped) or
+        re.match(r'^\d+[\)\）]', stripped) or
+        re.match(r'^[a-z][\.\)]\s', stripped)
+    )
+    if not is_list_item:
+        return
+
     # Check if already ends with a punctuation mark
     if stripped[-1] in _END_PUNCTUATION:
         return
@@ -138,7 +180,6 @@ def add_period_if_needed(para) -> None:
         last_run = para.runs[-1]
         last_run.text = last_run.text.rstrip() + "。"
     else:
-        # No runs — add a new run
         para.add_run("。")
 
 
