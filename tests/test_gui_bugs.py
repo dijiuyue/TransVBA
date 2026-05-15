@@ -66,6 +66,9 @@ class TestGuiLazyPanelBug:
         self.window.tree.selection_set("body")
         self.window._on_tree_select(None)
 
+        # Sync is gated by 修改模式; must enable it for sync to run
+        self.window.chk_edit.set(True)
+
         # Force _sync_settings_to_controller to raise even though it is now defensive
         with patch.object(self.window, "_sync_settings_to_controller", side_effect=RuntimeError("boom")):
             with patch("tvba_gui.messagebox") as mock_mb:

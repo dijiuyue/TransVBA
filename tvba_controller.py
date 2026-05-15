@@ -43,8 +43,9 @@ class TvbaController:
                  default_settings: FormatSettings | None = None):
         self._repo = repo
         self._applier = applier
-        saved = repo.load()
-        self._settings = saved if saved != FormatSettings() else (default_settings or saved)
+        template = default_settings or FormatSettings()
+        self._template_defaults = template
+        self._settings = template
         self._opened_file: Path | None = None
 
     @property
@@ -144,8 +145,16 @@ class TvbaController:
             tb = traceback.format_exc()
             return ApplyResult(success=False, message=f"{e}\n\n{tb}", elapsed_ms=elapsed_ms)
 
-    def reset_to_defaults(self) -> None:
-        self._settings = FormatSettings()
+    def reset_to_template_defaults(self) -> None:
+        self._settings = self._template_defaults
+
+    def clear_saved_settings(self) -> None:
+        self._repo.clear()
+
+    def load_saved_settings(self) -> None:
+        saved = self._repo.load()
+        if saved != FormatSettings():
+            self._settings = saved
 
     def load_preset(self, name: str) -> None:
         # TODO: Implement preset loading from JSON files

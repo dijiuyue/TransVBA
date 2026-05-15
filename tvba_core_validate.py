@@ -9,6 +9,30 @@ from pathlib import Path
 
 from docx import Document
 from tvba_settings import FormatSettings
+from tvba_utils import size_label_to_points
+from tvba_core_toc import is_toc_title_line, is_toc_entry_line
+from tvba_core_appendix import is_appendix_title
+from tvba_core_table import is_table_caption_line
+from tvba_core_figure import is_figure_caption_line
+
+W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+W_RPR = f"{{{W}}}rPr"
+W_RFONTS = f"{{{W}}}rFonts"
+W_PPR = f"{{{W}}}pPr"
+W_SZ = f"{{{W}}}sz"
+W_VAL = f"{{{W}}}val"
+W_EAST = f"{{{W}}}eastAsia"
+W_ASCII = f"{{{W}}}ascii"
+W_OUTLINE = f"{{{W}}}outlineLvl"
+W_SNAP = f"{{{W}}}snapToGrid"
+W_AUTO_DE = f"{{{W}}}autoSpaceDE"
+W_TRPR = f"{{{W}}}trPr"
+W_TRHEIGHT = f"{{{W}}}trHeight"
+W_HRULE = f"{{{W}}}hRule"
+W_T = f"{{{W}}}t"
+
+CN_RE = re.compile(r'[一-鿿]')
+ASCII_RE = re.compile(r'[a-zA-Z0-9]')
 
 
 @dataclass
@@ -24,20 +48,44 @@ def validate_document(
     progress_cb=None,
 ) -> list[ValidationIssue]:
     """Scan a document and return format issues based on the template's validation rules."""
+    from tvba_core_convert import ensure_docx
+
     rules = settings.validation
     issues: list[ValidationIssue] = []
 
+    if progress_cb:
+        progress_cb("正在准备文档...", 0.0)
+    docx_path = ensure_docx(docx_path)
     doc = Document(str(docx_path))
     paragraphs = list(doc.paragraphs)
     tables = list(doc.tables)
-    total = len(paragraphs) + len(tables)
+    n_paras = len(paragraphs)
+    n_tables = len(tables)
+
+    # Pre-compute total ticks for accurate progress
+    total_ticks = 0
+    if rules.check_chinese_font: total_ticks += n_paras
+    if rules.check_ascii_font: total_ticks += n_paras
+    if rules.check_brackets: total_ticks += n_paras
+    if rules.check_period: total_ticks += n_paras
+    if rules.check_forbidden_words and rules.forbidden_words: total_ticks += n_paras
+    if rules.check_table_font_size: total_ticks += n_tables
+    if rules.check_table_row_height: total_ticks += n_tables
+    if rules.check_cover_title_size: total_ticks += 1
+    if rules.check_appendix_body_size: total_ticks += 1
+    if rules.check_grid_alignment: total_ticks += 1
+    if rules.check_appendix_colon: total_ticks += 1
+    if rules.check_figure_table_space: total_ticks += 1
+    if rules.check_figure_position: total_ticks += 1
 
     count = 0
+    _last_reported = 0
     def tick(msg: str):
-        nonlocal count
+        nonlocal count, _last_reported
         count += 1
-        if progress_cb:
-            progress_cb(msg, count / max(total, 1))
+        if progress_cb and (count - _last_reported >= 25 or count == total_ticks):
+            _last_reported = count
+            progress_cb(msg, count / max(total_ticks, 1))
 
     if rules.check_chinese_font:
         for para in paragraphs:
@@ -114,27 +162,17 @@ def _para_location(para) -> str:
 def _check_chinese_font(para, issues: list[ValidationIssue]):
     """Check if Chinese characters use the correct font (宋体)."""
     text = para.text
-    if not text:
-        return
-    has_chinese = bool(re.search(r'[一-鿿]', text))
-    if not has_chinese:
+    if not text or not CN_RE.search(text):
         return
     for run in para.runs:
-        if not re.search(r'[一-鿿]', run.text):
+        if not CN_RE.search(run.text):
             continue
-        font = run.font
         try:
-            rPr = run._element.find(
-                ".//{http://schemas.openxmlformats.org/wordprocessingml/2006/main}rPr"
-            )
+            rPr = run._element.find(W_RPR)
             if rPr is not None:
-                rFonts = rPr.find(
-                    "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}rFonts"
-                )
+                rFonts = rPr.find(W_RFONTS)
                 if rFonts is not None:
-                    east = rFonts.get(
-                        "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}eastAsia"
-                    )
+                    east = rFonts.get(W_EAST)
                     if east and east != "宋体":
                         issues.append(ValidationIssue(
                             severity="warning",
@@ -149,26 +187,17 @@ def _check_chinese_font(para, issues: list[ValidationIssue]):
 def _check_ascii_font(para, issues: list[ValidationIssue]):
     """Check if ASCII characters (digits, letters) use Times New Roman."""
     text = para.text
-    if not text:
-        return
-    has_ascii = bool(re.search(r'[a-zA-Z0-9]', text))
-    if not has_ascii:
+    if not text or not ASCII_RE.search(text):
         return
     for run in para.runs:
-        if not re.search(r'[a-zA-Z0-9]', run.text):
+        if not ASCII_RE.search(run.text):
             continue
         try:
-            rPr = run._element.find(
-                ".//{http://schemas.openxmlformats.org/wordprocessingml/2006/main}rPr"
-            )
+            rPr = run._element.find(W_RPR)
             if rPr is not None:
-                rFonts = rPr.find(
-                    "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}rFonts"
-                )
+                rFonts = rPr.find(W_RFONTS)
                 if rFonts is not None:
-                    ascii_font = rFonts.get(
-                        "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}ascii"
-                    )
+                    ascii_font = rFonts.get(W_ASCII)
                     if ascii_font and ascii_font != "Times New Roman":
                         issues.append(ValidationIssue(
                             severity="warning",
@@ -185,7 +214,6 @@ def _check_brackets(para, issues: list[ValidationIssue]):
     text = para.text
     if not text:
         return
-    # Check for half-width parentheses that should be full-width
     if re.search(r'\([^)]*\)', text):
         issues.append(ValidationIssue(
             severity="warning",
@@ -209,11 +237,10 @@ def _check_period(para, issues: list[ValidationIssue]):
         return
 
     # Check if paragraph looks like a list item with bracket/parenthesis
-    # e.g. "(1) xxx", "1) xxx", "（1）xxx", "a. xxx", "a) xxx"
     is_list_item = (
-        re.match(r'^[\(\（]\d+[\)\）]', text) or  # (1) or （1）
-        re.match(r'^\d+[\)\）]', text) or          # 1) or 1）
-        re.match(r'^[a-z][\.\)]\s', text)           # a. or a)
+        re.match(r'^[\(\（]\d+[\)\）]', text) or
+        re.match(r'^\d+[\)\）]', text) or
+        re.match(r'^[a-z][\.\)]\s', text)
     )
     if not is_list_item:
         return
@@ -242,32 +269,23 @@ def _check_forbidden_words(para, forbidden_words: tuple[str, ...], issues: list[
 
 def _check_table_font_size(table, settings: FormatSettings, issues: list[ValidationIssue]):
     """Check if table body cells use the correct font size."""
-    expected_size = settings.table.body_size
+    expected_pt = size_label_to_points(settings.table.body_size)
     for row_idx, row in enumerate(table.rows):
         for col_idx, cell in enumerate(row.cells):
             for para in cell.paragraphs:
                 for run in para.runs:
                     try:
-                        rPr = run._element.find(
-                            ".//{http://schemas.openxmlformats.org/wordprocessingml/2006/main}rPr"
-                        )
+                        rPr = run._element.find(W_RPR)
                         if rPr is not None:
-                            sz = rPr.find(
-                                "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}sz"
-                            )
+                            sz = rPr.find(W_SZ)
                             if sz is not None:
-                                size_val = sz.get(
-                                    "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val"
-                                )
+                                size_val = sz.get(W_VAL)
                                 if size_val:
-                                    from tvba_utils import size_label_to_points
-                                    expected_pt = size_label_to_points(expected_size)
-                                    actual_half_pt = int(size_val)
-                                    actual_pt = actual_half_pt / 2
+                                    actual_pt = int(size_val) / 2
                                     if actual_pt != expected_pt:
                                         issues.append(ValidationIssue(
                                             severity="warning",
-                                            description=f"表格({row_idx+1},{col_idx+1})字号非{expected_size}",
+                                            description=f"表格({row_idx+1},{col_idx+1})字号非{settings.table.body_size}",
                                             location=f"表格行{row_idx+1}列{col_idx+1}",
                                         ))
                                         return
@@ -282,20 +300,12 @@ def _check_table_row_height(table, settings: FormatSettings, issues: list[Valida
     for row_idx, row in enumerate(table.rows):
         try:
             tr = row._element
-            trPr = tr.find(
-                "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}trPr"
-            )
+            trPr = tr.find(W_TRPR)
             if trPr is not None:
-                trHeight = trPr.find(
-                    "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}trHeight"
-                )
+                trHeight = trPr.find(W_TRHEIGHT)
                 if trHeight is not None:
-                    val = trHeight.get(
-                        "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val"
-                    )
-                    rule = trHeight.get(
-                        "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}hRule"
-                    )
+                    val = trHeight.get(W_VAL)
+                    rule = trHeight.get(W_HRULE)
                     if val and rule == "exact":
                         actual_twips = int(val)
                         if abs(actual_twips - expected_twips) > 10:
@@ -310,7 +320,6 @@ def _check_table_row_height(table, settings: FormatSettings, issues: list[Valida
 
 def _check_cover_title_size(paragraphs, settings: FormatSettings, issues: list[ValidationIssue]):
     """Check if the cover page title uses 二号 (22pt) fontWeight."""
-    from tvba_utils import size_label_to_points
     expected_pt = size_label_to_points("二号")
 
     for para in paragraphs[:15]:
@@ -319,24 +328,15 @@ def _check_cover_title_size(paragraphs, settings: FormatSettings, issues: list[V
             continue
         if para.alignment != 1:
             continue
-        # Stop at TOC boundary
-        from tvba_core_toc import is_toc_title_line, is_toc_entry_line
         if is_toc_title_line(text) or is_toc_entry_line(text):
             break
-        # Check font size in first run
         for run in para.runs:
             try:
-                rPr = run._element.find(
-                    ".//{http://schemas.openxmlformats.org/wordprocessingml/2006/main}rPr"
-                )
+                rPr = run._element.find(W_RPR)
                 if rPr is not None:
-                    sz = rPr.find(
-                        "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}sz"
-                    )
+                    sz = rPr.find(W_SZ)
                     if sz is not None:
-                        half_pts = int(sz.get(
-                            "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val"
-                        ))
+                        half_pts = int(sz.get(W_VAL))
                         actual_pt = half_pts / 2
                         if actual_pt != expected_pt:
                             issues.append(ValidationIssue(
@@ -346,13 +346,11 @@ def _check_cover_title_size(paragraphs, settings: FormatSettings, issues: list[V
                             ))
             except Exception:
                 pass
-        break  # Only check first qualifying paragraph
+        break
 
 
 def _check_appendix_body_size(paragraphs, settings: FormatSettings, issues: list[ValidationIssue]):
     """Check if appendix body text uses 小五 (10.5pt) font."""
-    from tvba_utils import size_label_to_points
-    from tvba_core_appendix import is_appendix_title
     expected_pt = size_label_to_points("小五")
 
     in_appendix = False
@@ -367,28 +365,21 @@ def _check_appendix_body_size(paragraphs, settings: FormatSettings, issues: list
             continue
         # Check if ending condition: next heading
         try:
-            rPr = para._element.find(
-                ".//{http://schemas.openxmlformats.org/wordprocessingml/2006/main}rPr"
-            )
+            rPr = para._element.find(W_RPR)
             if rPr is not None:
-                outline = rPr.find("{http://schemas.openxmlformats.org/wordprocessingml/2006/main}outlineLvl")
+                outline = rPr.find(W_OUTLINE)
                 if outline is not None:
                     in_appendix = False
                     continue
         except Exception:
             pass
-        # Check font size
         for run in para.runs:
             try:
-                rPr = run._element.find(
-                    ".//{http://schemas.openxmlformats.org/wordprocessingml/2006/main}rPr"
-                )
+                rPr = run._element.find(W_RPR)
                 if rPr is not None:
-                    sz = rPr.find("{http://schemas.openxmlformats.org/wordprocessingml/2006/main}sz")
+                    sz = rPr.find(W_SZ)
                     if sz is not None:
-                        half_pts = int(sz.get(
-                            "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val"
-                        ))
+                        half_pts = int(sz.get(W_VAL))
                         actual_pt = half_pts / 2
                         if actual_pt != expected_pt:
                             issues.append(ValidationIssue(
@@ -396,28 +387,26 @@ def _check_appendix_body_size(paragraphs, settings: FormatSettings, issues: list
                                 description=f"附件正文字号非小五(10.5pt)，当前为{actual_pt:.0f}pt",
                                 location=_para_location(para),
                             ))
-                            return in_appendix
+                            return
             except Exception:
                 pass
 
 
 def _check_grid_alignment(paragraphs, issues: list[ValidationIssue]):
     """Check if level 1 titles have snapToGrid enabled."""
-    W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
     for para in paragraphs:
         try:
-            pPr = para._element.find(f".//{{{W}}}pPr")
+            pPr = para._element.find(W_PPR)
             if pPr is None:
                 continue
-            outline = pPr.find(f"{{{W}}}outlineLvl")
+            outline = pPr.find(W_OUTLINE)
             if outline is None:
                 continue
-            level_val = outline.get(f"{{{W}}}val")
+            level_val = outline.get(W_VAL)
             if level_val != "0":
                 continue
-            # This is a level 1 title — check grid alignment
-            snap = pPr.find(f"{{{W}}}snapToGrid")
-            auto_de = pPr.find(f"{{{W}}}autoSpaceDE")
+            snap = pPr.find(W_SNAP)
+            auto_de = pPr.find(W_AUTO_DE)
             if snap is None or auto_de is None:
                 issues.append(ValidationIssue(
                     severity="warning",
@@ -431,14 +420,11 @@ def _check_grid_alignment(paragraphs, issues: list[ValidationIssue]):
 
 def _check_appendix_colon(paragraphs, issues: list[ValidationIssue]):
     """Check if appendix titles use fullwidth colon (：) after the number."""
-    from tvba_core_appendix import is_appendix_title
     for para in paragraphs:
         text = (para.text or "").strip()
         if not text:
             continue
         if is_appendix_title(text):
-            # Check for ： after the appendix prefix
-            import re
             if not re.search(r'附件\d*[：:]', text):
                 issues.append(ValidationIssue(
                     severity="warning",
@@ -449,15 +435,11 @@ def _check_appendix_colon(paragraphs, issues: list[ValidationIssue]):
 
 def _check_figure_table_space(paragraphs, issues: list[ValidationIssue]):
     """Check if figure/table captions have exactly one space between number and text."""
-    from tvba_core_table import is_table_caption_line
-    from tvba_core_figure import is_figure_caption_line
     for para in paragraphs:
         text = (para.text or "").strip()
         if not text:
             continue
         if is_table_caption_line(text) or is_figure_caption_line(text):
-            # Check spacing: number part should be separated by one space
-            import re
             m = re.match(r'^([表图]\s*\d+(?:\.\d+)*-\d+)(\s+)(.+)$', text)
             if m and len(m.group(2)) != 1:
                 issues.append(ValidationIssue(
@@ -468,25 +450,17 @@ def _check_figure_table_space(paragraphs, issues: list[ValidationIssue]):
 
 
 def _check_figure_position(doc, tables, paragraphs, issues: list[ValidationIssue]):
-    """Check figure/table caption positioning: table captions above, figure captions below.
-
-    Checks that captions appear BEFORE their associated table/figure.
-    """
-    from tvba_core_table import is_table_caption_line
-    from tvba_core_figure import is_figure_caption_line
-
+    """Check figure/table caption positioning: table captions above, figure captions below."""
     body = doc.element.body
     elements = list(body)
     for i, elem in enumerate(elements):
         tag = elem.tag.split("}")[-1] if "}" in elem.tag else elem.tag
         if tag == "tbl":
-            # Check if the previous non-empty element is a table caption
             for j in range(i - 1, -1, -1):
                 prev_tag = elements[j].tag.split("}")[-1] if "}" in elements[j].tag else elements[j].tag
                 if prev_tag == "p":
-                    # Get text from this paragraph element
                     texts = []
-                    for t in elements[j].findall(".//{http://schemas.openxmlformats.org/wordprocessingml/2006/main}t"):
+                    for t in elements[j].findall(f".//{W_T}"):
                         if t.text:
                             texts.append(t.text)
                     para_text = "".join(texts).strip()

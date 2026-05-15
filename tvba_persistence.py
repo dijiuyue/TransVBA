@@ -34,6 +34,10 @@ class SettingsRepository:
         with open(self.path, "w", encoding="utf-8") as f:
             json.dump(asdict(settings), f, ensure_ascii=False, indent=2)
 
+    def clear(self) -> None:
+        if self.path.exists():
+            self.path.unlink()
+
     def _from_dict(self, data: dict) -> FormatSettings:
         from tvba_settings import (
             BodySettings, TitleLevelSettings, TableSettings,

@@ -77,12 +77,12 @@ class TestTvbaController:
             assert hasattr(result, "elapsed_ms")
             assert result.elapsed_ms >= 0
 
-    def test_reset_to_defaults(self):
+    def test_reset_to_template_defaults(self):
         repo = SettingsRepository()
         applier = FakeDocumentApplier()
         ctrl = TvbaController(repo, applier)
         ctrl.update_setting("body.font", "黑体")
-        ctrl.reset_to_defaults()
+        ctrl.reset_to_template_defaults()
         assert ctrl.settings.body.font == "宋体"
 
     def test_update_setting_table(self):

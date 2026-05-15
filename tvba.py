@@ -15,16 +15,12 @@ from tvba_templates import TemplateManager
 
 def main():
     repo = SettingsRepository()
-    saved = repo.load()
-    if saved.template_name and saved != FormatSettings():
-        default_settings = saved
-    else:
-        try:
-            default_settings = TemplateManager.load_template(
-                TemplateManager.get_default_template_id()
-            )
-        except (FileNotFoundError, Exception):
-            default_settings = FormatSettings()
+    try:
+        default_settings = TemplateManager.load_template(
+            TemplateManager.get_default_template_id()
+        )
+    except (FileNotFoundError, Exception):
+        default_settings = FormatSettings()
     controller = TvbaController(repo, apply_settings_to_document, default_settings)
     app = TvbaMainWindow(controller)
     app.mainloop()

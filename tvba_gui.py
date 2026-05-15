@@ -463,11 +463,12 @@ class TvbaMainWindow(tk.Tk):
             messagebox.showwarning("提示", "请先打开一个 Word 文档")
             return
 
-        try:
-            self._sync_settings_to_controller()
-        except Exception as e:
-            self.status.config(text="错误: 同步设置失败")
-            return
+        if self.chk_edit.get():
+            try:
+                self._sync_settings_to_controller()
+            except Exception as e:
+                self.status.config(text="错误: 同步设置失败")
+                return
 
         self.status.config(text="正在检查格式...")
         self.progress["value"] = 0
@@ -509,12 +510,13 @@ class TvbaMainWindow(tk.Tk):
             self.status.config(text=f"已打开: {p.name}")
 
     def _on_apply(self):
-        try:
-            self._sync_settings_to_controller()
-        except Exception as e:
-            self.status.config(text=f"错误: 同步设置失败")
-            messagebox.showerror("错误", f"同步设置失败: {e}")
-            return
+        if self.chk_edit.get():
+            try:
+                self._sync_settings_to_controller()
+            except Exception as e:
+                self.status.config(text=f"错误: 同步设置失败")
+                messagebox.showerror("错误", f"同步设置失败: {e}")
+                return
 
         self.progress["value"] = 0
         self.status.config(text="正在应用...")
@@ -526,7 +528,7 @@ class TvbaMainWindow(tk.Tk):
             self.update()
 
         result = self.controller.apply(
-            save_settings=self.chk_remember.get(),
+            save_settings=(self.chk_edit.get() and self.chk_remember.get()),
             progress_cb=progress_cb,
         )
         if result.success:
@@ -549,7 +551,8 @@ class TvbaMainWindow(tk.Tk):
         self.destroy()
 
     def _on_reset(self):
-        self.controller.reset_to_defaults()
+        self.controller.reset_to_template_defaults()
+        self.controller.clear_saved_settings()
         self._populate_from_settings()
         self.status.config(text="已重置为默认值")
 
@@ -567,6 +570,11 @@ class TvbaMainWindow(tk.Tk):
     def _on_edit_toggle(self):
         enabled = self.chk_edit.get()
         state = "normal" if enabled else "disabled"
+        if enabled:
+            self.controller.load_saved_settings()
+        else:
+            self.controller.reset_to_template_defaults()
+        self._populate_from_settings()
         # Enable/disable all input widgets in all panels
         for panel in self._panels.values():
             self._set_edit_state_recursive(panel, state)
