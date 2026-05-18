@@ -24,7 +24,7 @@ class TestEndToEnd:
             doc.save(path)
 
             settings = FormatSettings()
-            out = apply_settings_to_document(path, settings)
+            out, _ = apply_settings_to_document(path, settings)
 
             result = Document(out)
             assert len(result.paragraphs) >= 7
@@ -55,7 +55,7 @@ class TestEndToEnd:
             doc.save(path)
 
             settings = FormatSettings()
-            out = apply_settings_to_document(path, settings)
+            out, _ = apply_settings_to_document(path, settings)
             result = Document(out)
 
             expected_levels = ["0", "1", "2", "3", "4"]

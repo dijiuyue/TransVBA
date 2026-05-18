@@ -12,8 +12,9 @@ from tvba_settings import FormatSettings
 from tvba_utils import size_label_to_points
 from tvba_core_toc import is_toc_title_line, is_toc_entry_line
 from tvba_core_appendix import is_appendix_title
-from tvba_core_table import is_table_caption_line
-from tvba_core_figure import is_figure_caption_line
+from tvba_core_table import is_table_caption_line, is_table_caption_paragraph
+from tvba_core_figure import is_figure_caption_line, is_figure_caption_paragraph
+from tvba_core_oox import get_effective_run_fonts
 
 W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
 W_RPR = f"{{{W}}}rPr"
@@ -30,6 +31,12 @@ W_TRPR = f"{{{W}}}trPr"
 W_TRHEIGHT = f"{{{W}}}trHeight"
 W_HRULE = f"{{{W}}}hRule"
 W_T = f"{{{W}}}t"
+W_SPACING = f"{{{W}}}spacing"
+W_BEFORE = f"{{{W}}}before"
+W_AFTER = f"{{{W}}}after"
+W_BEFORE_LINES = f"{{{W}}}beforeLines"
+W_AFTER_LINES = f"{{{W}}}afterLines"
+W_JC = f"{{{W}}}jc"
 
 CN_RE = re.compile(r'[一-鿿]')
 ASCII_RE = re.compile(r'[a-zA-Z0-9]')
@@ -77,6 +84,7 @@ def validate_document(
     if rules.check_appendix_colon: total_ticks += 1
     if rules.check_figure_table_space: total_ticks += 1
     if rules.check_figure_position: total_ticks += 1
+    if rules.check_chairman_number: total_ticks += 1
 
     count = 0
     _last_reported = 0
@@ -89,12 +97,12 @@ def validate_document(
 
     if rules.check_chinese_font:
         for para in paragraphs:
-            _check_chinese_font(para, issues)
+            _check_chinese_font(para, issues, doc=doc)
             tick("检查中文字体...")
 
     if rules.check_ascii_font:
         for para in paragraphs:
-            _check_ascii_font(para, issues)
+            _check_ascii_font(para, issues, doc=doc)
             tick("检查数字/英文字体...")
 
     if rules.check_brackets:
@@ -146,6 +154,30 @@ def validate_document(
         _check_figure_position(doc, tables, paragraphs, issues)
         tick("检查图表位置...")
 
+    if rules.check_chairman_number:
+        _check_chairman_number(paragraphs, tables, issues)
+        tick("检查负责人信息...")
+
+    if rules.check_presidential_order:
+        from tvba_core_presidential import check_presidential_order_numbers
+        check_presidential_order_numbers(paragraphs, issues)
+        tick("检查主席令编号...")
+
+    if rules.check_spacing:
+        for para in paragraphs:
+            _check_paragraph_spacing(para, issues)
+            tick("检查段前段后...")
+
+    if rules.check_caption_alignment:
+        for para in paragraphs:
+            _check_caption_alignment(para, issues, doc)
+            tick("检查题注居中...")
+
+    if rules.check_table_fixed_dimensions:
+        for table in tables:
+            _check_table_fixed_dimensions(table, issues)
+            tick("检查表格固定尺寸...")
+
     if progress_cb:
         progress_cb("检查完成", 1.0)
 
@@ -159,7 +191,7 @@ def _para_location(para) -> str:
     return f'"{text}"'
 
 
-def _check_chinese_font(para, issues: list[ValidationIssue]):
+def _check_chinese_font(para, issues: list[ValidationIssue], doc=None):
     """Check if Chinese characters use the correct font (宋体)."""
     text = para.text
     if not text or not CN_RE.search(text):
@@ -168,23 +200,35 @@ def _check_chinese_font(para, issues: list[ValidationIssue]):
         if not CN_RE.search(run.text):
             continue
         try:
-            rPr = run._element.find(W_RPR)
-            if rPr is not None:
-                rFonts = rPr.find(W_RFONTS)
-                if rFonts is not None:
-                    east = rFonts.get(W_EAST)
-                    if east and east != "宋体":
-                        issues.append(ValidationIssue(
-                            severity="warning",
-                            description=f"中文字体非宋体: {east}",
-                            location=_para_location(para),
-                        ))
-                        return
+            fonts = get_effective_run_fonts(run, doc)
+            east = fonts.get("eastAsia")
+            if east is None:
+                issues.append(ValidationIssue(
+                    severity="warning",
+                    description="未能解析到中文字体（未显式设置且无样式/默认值）",
+                    location=_para_location(para),
+                ))
+                return
+            if east.startswith("theme:"):
+                # Theme-referenced font — Word resolves via theme1.xml, cannot verify
+                issues.append(ValidationIssue(
+                    severity="warning",
+                    description=f"中文字体由主题引用 ({east})，无法验证是否为宋体",
+                    location=_para_location(para),
+                ))
+                return
+            if east != "宋体":
+                issues.append(ValidationIssue(
+                    severity="warning",
+                    description=f"中文字体非宋体: {east}",
+                    location=_para_location(para),
+                ))
+                return
         except Exception:
             pass
 
 
-def _check_ascii_font(para, issues: list[ValidationIssue]):
+def _check_ascii_font(para, issues: list[ValidationIssue], doc=None):
     """Check if ASCII characters (digits, letters) use Times New Roman."""
     text = para.text
     if not text or not ASCII_RE.search(text):
@@ -193,18 +237,29 @@ def _check_ascii_font(para, issues: list[ValidationIssue]):
         if not ASCII_RE.search(run.text):
             continue
         try:
-            rPr = run._element.find(W_RPR)
-            if rPr is not None:
-                rFonts = rPr.find(W_RFONTS)
-                if rFonts is not None:
-                    ascii_font = rFonts.get(W_ASCII)
-                    if ascii_font and ascii_font != "Times New Roman":
-                        issues.append(ValidationIssue(
-                            severity="warning",
-                            description=f"数字/英文字体非 Times New Roman: {ascii_font}",
-                            location=_para_location(para),
-                        ))
-                        return
+            fonts = get_effective_run_fonts(run, doc)
+            ascii_font = fonts.get("ascii") or fonts.get("hAnsi")
+            if ascii_font is None:
+                issues.append(ValidationIssue(
+                    severity="warning",
+                    description="未能解析到数字/英文字体（未显式设置且无样式/默认值）",
+                    location=_para_location(para),
+                ))
+                return
+            if ascii_font.startswith("theme:"):
+                issues.append(ValidationIssue(
+                    severity="warning",
+                    description=f"数字/英文字体由主题引用 ({ascii_font})，无法验证是否为 Times New Roman",
+                    location=_para_location(para),
+                ))
+                return
+            if ascii_font != "Times New Roman":
+                issues.append(ValidationIssue(
+                    severity="warning",
+                    description=f"数字/英文字体非 Times New Roman: {ascii_font}",
+                    location=_para_location(para),
+                ))
+                return
         except Exception:
             pass
 
@@ -294,26 +349,37 @@ def _check_table_font_size(table, settings: FormatSettings, issues: list[Validat
 
 
 def _check_table_row_height(table, settings: FormatSettings, issues: list[ValidationIssue]):
-    """Check if table rows have the correct height."""
-    expected_cm = settings.table.row_height_cm
-    expected_twips = expected_cm * 567  # 1 cm = 567 twips
+    """Check for fixed table row heights (should be auto-fit per onsite requirement)."""
     for row_idx, row in enumerate(table.rows):
         try:
             tr = row._element
             trPr = tr.find(W_TRPR)
-            if trPr is not None:
-                trHeight = trPr.find(W_TRHEIGHT)
-                if trHeight is not None:
-                    val = trHeight.get(W_VAL)
-                    rule = trHeight.get(W_HRULE)
-                    if val and rule == "exact":
-                        actual_twips = int(val)
-                        if abs(actual_twips - expected_twips) > 10:
-                            issues.append(ValidationIssue(
-                                severity="warning",
-                                description=f"表格行{row_idx+1}行高非{expected_cm}cm",
-                                location=f"表格行{row_idx+1}",
-                            ))
+            if trPr is None:
+                continue
+            trHeight = trPr.find(W_TRHEIGHT)
+            if trHeight is None:
+                continue
+
+            rule = trHeight.get(W_HRULE) or ""
+            val = trHeight.get(W_VAL)
+
+            if rule == "exact":
+                # Fixed height is explicitly disallowed — tables should auto-fit
+                cm = round(int(val) / 567, 2) if val else 0
+                issues.append(ValidationIssue(
+                    severity="warning",
+                    description=f"表格行{row_idx+1}有固定行高{cm}cm（应为自适应）",
+                    location=f"表格行{row_idx+1}",
+                ))
+            elif rule == "atLeast" and val:
+                # atLeast with a high value effectively acts as fixed
+                cm = int(val) / 567
+                if cm > 1.5:
+                    issues.append(ValidationIssue(
+                        severity="warning",
+                        description=f"表格行{row_idx+1}最小行高{cm:.1f}cm偏高（应为自适应）",
+                        location=f"表格行{row_idx+1}",
+                    ))
         except Exception:
             pass
 
@@ -440,7 +506,7 @@ def _check_figure_table_space(paragraphs, issues: list[ValidationIssue]):
         if not text:
             continue
         if is_table_caption_line(text) or is_figure_caption_line(text):
-            m = re.match(r'^([表图]\s*\d+(?:\.\d+)*-\d+)(\s+)(.+)$', text)
+            m = re.match(r'^([表图]\s*[0-9０-９]+(?:[.．][0-9０-９]+)*(?:[-－–—][0-9０-９]+)?)(\s+)(.+)$', text)
             if m and len(m.group(2)) != 1:
                 issues.append(ValidationIssue(
                     severity="warning",
@@ -471,3 +537,143 @@ def _check_figure_position(doc, tables, paragraphs, issues: list[ValidationIssue
                             location=f'表格前段落: "{para_text[:30]}..."' if len(para_text) > 30 else f'表格前段落: "{para_text}"',
                         ))
                     break
+
+
+# Patterns must be full field labels (with colon implied).
+# Bare words like "审定"/"批准" are excluded because they match generic body text
+# ("审定意见", "批准单位") and produce false positives.
+_CHAIRMAN_PATTERNS = ("负责人", "审定人", "核准人", "批准人")
+
+
+def _check_chairman_number(paragraphs, tables, issues: list[ValidationIssue]):
+    """Check if the document has chairman/approver fields with content after them.
+
+    Scans the first 30 paragraphs and first 5 tables for chairman/approver
+    designations and verifies there is content after the label (name or title).
+    """
+    found_chairman = False
+
+    # Collect text sources: paragraphs + table cell paragraphs
+    text_sources: list[tuple[str, str]] = []  # (text, location)
+    for para in paragraphs[:30]:
+        text = (para.text or "").strip()
+        if text:
+            text_sources.append((text, _para_location(para)))
+
+    for ti, table in enumerate(tables[:5]):
+        for ri, row in enumerate(table.rows):
+            for ci, cell in enumerate(row.cells):
+                for pi, para in enumerate(cell.paragraphs):
+                    text = (para.text or "").strip()
+                    if text:
+                        text_sources.append((text, f"表格{ti+1}行{ri+1}列{ci+1}"))
+
+    for text, location in text_sources:
+        for pattern in _CHAIRMAN_PATTERNS:
+            # Must match as field label: "负责人：张三", not "项目负责人制度说明"
+            m = re.search(pattern + r'\s*[：:]\s*(\S+)', text)
+            if m:
+                found_chairman = True
+                break
+            # Also catch the case where the label exists but content is missing
+            m_empty = re.search(pattern + r'\s*[：:]\s*$', text)
+            if m_empty:
+                found_chairman = True
+                issues.append(ValidationIssue(
+                    severity="warning",
+                    description=f'"{pattern}"后应有姓名或编号',
+                    location=location,
+                ))
+                break
+
+    if not found_chairman and text_sources:
+        issues.append(ValidationIssue(
+            severity="warning",
+            description="未在前30段及前5个表格中检测到负责人/审定人/核准人信息",
+        ))
+
+
+def _check_paragraph_spacing(para, issues: list[ValidationIssue]):
+    """Check that paragraph has no before/after spacing (must be 0 per onsite req)."""
+    text = (para.text or "").strip()
+    if not text:
+        return
+    pPr = para._element.find(W_PPR)
+    if pPr is None:
+        return
+    spacing = pPr.find(W_SPACING)
+    if spacing is None:
+        return
+
+    def _get_int(attr):
+        v = spacing.get(attr)
+        return int(v) if v else 0
+
+    before = _get_int(W_BEFORE)
+    after = _get_int(W_AFTER)
+    before_lines = _get_int(W_BEFORE_LINES)
+    after_lines = _get_int(W_AFTER_LINES)
+
+    if before != 0 or after != 0 or before_lines != 0 or after_lines != 0:
+        issues.append(ValidationIssue(
+            severity="warning",
+            description=f"段落段前/段后非0（before={before} after={after} beforeLines={before_lines} afterLines={after_lines}）",
+            location=_para_location(para),
+        ))
+
+
+def _check_caption_alignment(para, issues: list[ValidationIssue], doc=None):
+    """Check that table/figure captions are centered."""
+    text = (para.text or "").strip()
+    if not text:
+        return
+    if not (is_table_caption_paragraph(para, doc) or is_figure_caption_paragraph(para, doc)):
+        return
+    pPr = para._element.find(W_PPR)
+    if pPr is None:
+        issues.append(ValidationIssue(
+            severity="warning",
+            description="题注未设置居中对齐",
+            location=_para_location(para),
+        ))
+        return
+    jc = pPr.find(W_JC)
+    if jc is None or jc.get(W_VAL) != "center":
+        issues.append(ValidationIssue(
+            severity="warning",
+            description="题注应为居中对齐",
+            location=_para_location(para),
+        ))
+
+
+def _check_table_fixed_dimensions(table, issues: list[ValidationIssue]):
+    """Check that table doesn't have fixed row heights or column widths."""
+    tblPr = table._element.find(f"{{{W}}}tblPr")
+    if tblPr is not None:
+        # Check for fixed table layout (w:tblLayout w:type="fixed")
+        tblLayout = tblPr.find(f"{{{W}}}tblLayout")
+        if tblLayout is not None:
+            layout_type = tblLayout.get(f"{{{W}}}type") or ""
+            if layout_type == "fixed":
+                issues.append(ValidationIssue(
+                    severity="warning",
+                    description="表格有固定列宽布局（应为自适应）",
+                    location="表格",
+                ))
+
+        # Check for fixed total table width (w:tblW w:type="dxa" with non-zero value).
+        # Use findall because multiple tblW elements can coexist (python-docx default + user-set).
+        for tblW in tblPr.findall(f"{{{W}}}tblW"):
+            w_type = tblW.get(f"{{{W}}}type") or ""
+            if w_type == "dxa":
+                w_val = tblW.get(f"{{{W}}}w")
+                if w_val and int(w_val) > 0:
+                    issues.append(ValidationIssue(
+                        severity="warning",
+                        description=f"表格宽度固定为{int(w_val)/20:.0f}pt（应为自适应）",
+                        location="表格",
+                    ))
+                    break
+
+    # Fixed row heights are already checked by _check_table_row_height
+    # when check_table_row_height is enabled.

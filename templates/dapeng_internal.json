@@ -68,6 +68,9 @@
     "title_font": "宋体",
     "title_size": "小四",
     "title_bold": false,
+    "title_alignment": "居中",
+    "title_before_lines": 0.0,
+    "title_after_lines": 0.0,
     "title_spacing": 1.5,
     "title_left_indent_cm": 0.0,
     "title_right_indent_cm": 0.0,
@@ -76,7 +79,6 @@
     "body_font": "宋体",
     "body_size": "小四",
     "line_width_pt": 0.5,
-    "row_height_cm": 0.7,
     "spacing": 1.5,
     "auto_fit_mode": "window"
   },
@@ -85,6 +87,9 @@
     "title_font": "宋体",
     "title_size": "小四",
     "title_bold": false,
+    "title_alignment": "居中",
+    "title_before_lines": 0.0,
+    "title_after_lines": 0.0,
     "title_spacing": 1.5,
     "title_left_indent_cm": 0.0,
     "title_right_indent_cm": 0.0,
@@ -139,7 +144,7 @@
   "auto_detect_numeric_titles": true,
   "auto_detect_include_list_paragraphs": true,
   "remember_settings": true,
-  "prefer_com_resolver": false,
+  "prefer_com_resolver": true,
 
   "validation": {
     "check_table_row_height": false,
@@ -152,10 +157,14 @@
     "check_figure_table_space": true,
     "check_forbidden_words": true,
     "forbidden_words": ["附图", "附表"],
+    "forbidden_replacements": {"附图": "附件", "附表": "附件"},
     "check_figure_position": true,
     "check_brackets": true,
     "check_period": true,
     "check_ascii_font": true,
-    "check_chinese_font": true
+    "check_chinese_font": true,
+    "check_spacing": true,
+    "check_caption_alignment": true,
+    "check_table_fixed_dimensions": true
   }
 }

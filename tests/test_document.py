@@ -30,8 +30,9 @@ class TestApplySettingsToDocument:
             doc.save(path)
 
             settings = FormatSettings()
-            out = apply_settings_to_document(path, settings)
+            out, warnings = apply_settings_to_document(path, settings)
             assert out.exists()
+            assert isinstance(warnings.messages, list)
 
             # Verify output
             result = Document(out)
@@ -47,7 +48,7 @@ class TestApplySettingsToDocument:
             doc.save(path)
 
             settings = FormatSettings()
-            out = apply_settings_to_document(path, settings)
+            out, _ = apply_settings_to_document(path, settings)
             result = Document(out)
 
             # First paragraph should have outline level
@@ -73,6 +74,42 @@ class TestApplySettingsToDocument:
             apply_settings_to_document(path, settings, progress_cb=cb)
             assert len(progress_calls) > 0
 
+    def test_large_numbered_document_skips_com_resolver(self):
+        """Large docs with many numbered paragraphs should not enter slow Word COM."""
+        from lxml import etree
+        from tvba_core_numbering import DocxListResolver, ResolverStatus
+
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "large.docx"
+            doc = Document()
+            W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+            for i in range(305):
+                para = doc.add_paragraph(f"Numbered paragraph {i}")
+                pPr = para._element.get_or_add_pPr()
+                numPr = etree.SubElement(pPr, f"{{{W}}}numPr")
+                ilvl = etree.SubElement(numPr, f"{{{W}}}ilvl")
+                ilvl.set(f"{{{W}}}val", "0")
+                numId = etree.SubElement(numPr, f"{{{W}}}numId")
+                numId.set(f"{{{W}}}val", "1")
+            doc.save(path)
+
+            calls = []
+
+            def fake_auto_select(*, prefer_com, docx_path, doc):
+                calls.append((prefer_com, docx_path))
+                return DocxListResolver(doc), ResolverStatus(
+                    mode="docx_fallback",
+                    reliable_rendered_text=False,
+                    warnings=[],
+                )
+
+            with patch("tvba_core_document.auto_select", side_effect=fake_auto_select):
+                _, warnings = apply_settings_to_document(path, FormatSettings())
+
+            assert calls
+            assert calls[0][0] is False
+            assert any("跳过自动编号标题解析" in msg for msg in warnings.messages)
+
     def test_custom_output_path(self):
         with tempfile.TemporaryDirectory() as td:
             src = Path(td) / "test.docx"
@@ -82,7 +119,7 @@ class TestApplySettingsToDocument:
             doc.save(src)
 
             settings = FormatSettings()
-            result = apply_settings_to_document(src, settings, output_path=out)
+            result, _ = apply_settings_to_document(src, settings, output_path=out)
             assert result == out
             assert out.exists()
 
@@ -101,7 +138,7 @@ class TestApplySettingsToDocument:
 
             settings = FormatSettings()
             with patch("win32com.client.DispatchEx", return_value=mock_word):
-                out = apply_settings_to_document(doc_path, settings)
+                out, _ = apply_settings_to_document(doc_path, settings)
 
             assert out.suffix == ".docx"
             assert out.exists()
@@ -139,7 +176,7 @@ class TestApplySettingsToDocument:
 
             # Apply settings with different font
             settings = FormatSettings(body=BodySettings(font="黑体", size="小四", spacing=1.5))
-            out = apply_settings_to_document(path, settings)
+            out, _ = apply_settings_to_document(path, settings)
 
             # Verify output
             result = Document(out)
@@ -161,7 +198,7 @@ class TestApplySettingsToDocument:
 
             # Apply settings with size 五号 (10.5pt)
             settings = FormatSettings(body=BodySettings(font="宋体", size="五号", spacing=1.5))
-            out = apply_settings_to_document(path, settings)
+            out, _ = apply_settings_to_document(path, settings)
 
             result = Document(out)
             run = result.paragraphs[0].runs[0]
@@ -179,7 +216,7 @@ class TestApplySettingsToDocument:
             doc.save(path)
 
             settings = FormatSettings(auto_detect_numeric_titles=False)
-            out = apply_settings_to_document(path, settings)
+            out, _ = apply_settings_to_document(path, settings)
 
             result = Document(out)
             para = result.paragraphs[0]
@@ -208,7 +245,7 @@ class TestApplySettingsToDocument:
             doc.save(path)
 
             settings = FormatSettings(auto_detect_numeric_titles=False)
-            out = apply_settings_to_document(path, settings)
+            out, _ = apply_settings_to_document(path, settings)
 
             result = Document(out)
             para = result.paragraphs[0]
@@ -235,7 +272,7 @@ class TestApplySettingsToDocument:
             doc.save(path)
 
             settings = FormatSettings(auto_detect_numeric_titles=False)
-            out = apply_settings_to_document(path, settings)
+            out, _ = apply_settings_to_document(path, settings)
 
             result = Document(out)
             para = result.paragraphs[0]
@@ -261,7 +298,7 @@ class TestApplySettingsToDocument:
             doc.save(path)
 
             settings = FormatSettings(auto_detect_numeric_titles=False)
-            out = apply_settings_to_document(path, settings)
+            out, _ = apply_settings_to_document(path, settings)
 
             result = Document(out)
             para = result.paragraphs[0]
@@ -294,7 +331,7 @@ class TestApplySettingsToDocument:
                     title_font="黑体", title_size="小四", title_bold=True, title_spacing=1.5,
                 ),
             )
-            out = apply_settings_to_document(path, settings)
+            out, _ = apply_settings_to_document(path, settings)
 
             result = Document(out)
             para = result.paragraphs[0]
@@ -327,7 +364,7 @@ class TestApplySettingsToDocument:
                     title_font="黑体", title_size="小四", title_bold=True, title_spacing=1.5,
                 ),
             )
-            out = apply_settings_to_document(path, settings)
+            out, _ = apply_settings_to_document(path, settings)
 
             result = Document(out)
             para = result.paragraphs[0]

@@ -19,8 +19,7 @@ from tvba_core_oox import (
     set_run_font_size,
     set_outline_level,
     get_effective_outline_level,
-    apply_indent_chars,
-    set_before_after_lines,
+    apply_paragraph_spacing,
     set_snap_to_grid,
     set_auto_space_de,
     format_all_runs_in_paragraph,
@@ -37,13 +36,21 @@ from tvba_utils import size_label_to_points, clean_para_text
 _TITLE_RE = re.compile(r"^([\d０-９]+([\.．]\d+){0,6}\.?)[ \t]+(.+)$")
 
 # Chinese number prefix for Level 1 titles: 一、二、…、十 followed by 、， or space
-_CHINESE_NUM_RE = re.compile(r"^[一二三四五六七八九十]+[、，\s]")
+# Excludes ordinals like 第一、第二 where the number follows 第.
+_CHINESE_NUM_RE = re.compile(r"^(?!第)[一二三四五六七八九十]+[、，\s]")
 
-# Level 4 list items: (1) xxx, 1) xxx, 1、 xxx (body text, not document titles)
-_LIST_ITEM_RE = re.compile(r"^(?:\(\d+\)|\d+[\)、])\s")
+# Legacy list-item markers such as 1), 1）, （1）, and a. are body list
+# markers, not content title levels.  Level 4/5 titles are recognized only by
+# dotted Arabic numbering: 1.1.1.1 and 1.1.1.1.1.
+_LIST_ITEM_RE = re.compile(r"(?!)")
+_LETTER_ITEM_RE = re.compile(r"(?!)")
 
-# Level 5 letter items: a. xxx, a) xxx, a、 xxx (body text, not document titles)
-_LETTER_ITEM_RE = re.compile(r"^[a-z][\.、\)]\s")
+_QUANTITY_TITLE_STARTS = (
+    "\u4e2a", "\u5ea7", "\u9879", "\u6761", "\u6b21", "\u5e74", "\u6708", "\u65e5",
+    "\u516c\u91cc", "\u7c73", "\u5428", "\u4eba", "\u6237", "\u5904", "\u5bb6",
+    "km", "m", "%",
+)
+_SENTENCE_PUNCTUATION_RE = re.compile(r"[\uff0c\uff1b\uff1a\uff01\uff1f\u3002,;:!?]")
 
 
 def normalize_number_string(s: str) -> str:
@@ -62,6 +69,8 @@ def normalize_number_string(s: str) -> str:
 def identify_level_from_number(num_str: str) -> int:
     """Map a normalized number string to title level 1-5 (0 = not a title)."""
     if not num_str:
+        return 0
+    if not re.fullmatch(r"\d+(?:\.\d+){0,4}", num_str):
         return 0
     dot_count = num_str.count(".")
     if dot_count == 0:
@@ -86,7 +95,21 @@ def identify_numeric_title_level(text: str) -> int:
     if not m:
         return 0
     num_part = normalize_number_string(m.group(1))
+    title_text = m.group(3).strip()
+    if "." not in num_part and _looks_like_quantity_or_body_sentence(title_text):
+        return 0
     return identify_level_from_number(num_part)
+
+
+def _looks_like_quantity_or_body_sentence(title_text: str) -> bool:
+    """Reject body text like '21 个地市...' from plain-integer headings."""
+    if not title_text:
+        return True
+    compact = title_text.lstrip()
+    lower = compact.lower()
+    if any(lower.startswith(prefix) for prefix in _QUANTITY_TITLE_STARTS):
+        return True
+    return len(compact) >= 40 and bool(_SENTENCE_PUNCTUATION_RE.search(compact))
 
 
 def identify_chinese_title(text: str) -> bool:
@@ -96,15 +119,29 @@ def identify_chinese_title(text: str) -> bool:
 
 
 def identify_list_item(text: str) -> int:
-    """Identify list item level from text. Returns 4 for bracket items, 5 for letter items, 0 otherwise."""
-    text = clean_para_text(text)
-    if not text:
-        return 0
-    if _LIST_ITEM_RE.match(text):
-        return 4
-    if _LETTER_ITEM_RE.match(text):
-        return 5
+    """Deprecated list-marker title detection.
+
+    Bracket/letter list items are intentionally not treated as titles.  Keep
+    this function as a compatibility shim for callers/tests.
+    """
     return 0
+
+
+def _strip_list_prefix(text: str, level: int) -> str:
+    """Remove the list-item prefix (e.g. '(1) ', 'a. ') and return remaining text.
+
+    Returns empty string if prefix not found.
+    """
+    text = clean_para_text(text)
+    if level == 4:
+        m = _LIST_ITEM_RE.match(text)
+        if m:
+            return text[m.end():].strip()
+    elif level == 5:
+        m = _LETTER_ITEM_RE.match(text)
+        if m:
+            return text[m.end():].strip()
+    return ""
 
 
 def _find_split_positions(text: str) -> list[int]:
@@ -116,7 +153,8 @@ def _find_split_positions(text: str) -> list[int]:
     positions = set()
 
     # 1. Chinese number markers: 一、二、三、...
-    for m in re.finditer(r'[一二三四五六七八九十]+[、，]', text):
+    # Exclude ordinals like 第一、第二 (where the number follows 第).
+    for m in re.finditer(r'(?<![第])[一二三四五六七八九十]+[、，]', text):
         if m.start() > 0:
             positions.add(m.start())
 
@@ -140,19 +178,6 @@ def _find_split_positions(text: str) -> list[int]:
         r'(?<=[一-鿿。！？、，\s])\d+(?=\s+[一-鿿])', text
     ):
         positions.add(m.start())
-
-    # 4. List items at non-start: (1), 1), 1、
-    for m in re.finditer(r'(?<=[^0-9])(?:\(\d+\)|\d+[\)、])\s', text):
-        pos = m.start()
-        if pos > 0 and text[pos].isdigit():
-            positions.add(pos)
-        elif pos > 0 and text[pos] == '(':
-            positions.add(pos)
-
-    # 5. Letter items: a. a) a、
-    for m in re.finditer(r'(?<=[^a-zA-Z])[a-z][\.、\)]\s', text):
-        if m.start() > 0:
-            positions.add(m.start())
 
     # Sort and merge nearby positions (within 2 chars)
     sorted_pos = sorted(positions)
@@ -281,32 +306,67 @@ def apply_title_style(paragraph, level: int, level_settings, body_settings) -> N
     _ALIGNMENT_MAP = {"左对齐": 0, "居中": 1, "右对齐": 2, "两端对齐": 3}
     paragraph.alignment = _ALIGNMENT_MAP.get(level_settings.alignment, 0)
 
-    # Spacing
-    set_before_after_lines(
+    # Spacing (before/after in lines, line spacing) via unified helper
+    apply_paragraph_spacing(
         paragraph.paragraph_format,
         before_lines=level_settings.before_lines,
         after_lines=level_settings.after_lines,
+        line_spacing=level_settings.line_spacing,
     )
-
-    # Line spacing
-    pPr = paragraph._element.find(".//w:pPr", {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"})
-    if pPr is not None:
-        from lxml import etree
-        W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
-        spacing = pPr.find(f"{{{W}}}spacing")
-        if spacing is None:
-            spacing = etree.SubElement(pPr, f"{{{W}}}spacing")
-        spacing.set(f"{{{W}}}line", str(int(level_settings.line_spacing * 240)))
-        spacing.set(f"{{{W}}}lineRule", "auto")
 
     # Grid alignment for level 1 titles (大鹏模板要求)
     if level == 1:
         set_snap_to_grid(paragraph, True)
         set_auto_space_de(paragraph, True)
 
-    # Normalize brackets and sync number font (no period for titles)
-    apply_brackets(paragraph, paragraph.text)
+    # Normalize brackets and sync number font (no period for titles).
+    # Content modifications run only when body settings explicitly allow.
+    if body_settings.modify_content:
+        apply_brackets(paragraph, paragraph.text)
     sync_number_font_with_body(paragraph)
+
+
+def _has_numbering_hint(para, _style_by_id=None) -> bool:
+    """Return True when OOXML suggests this paragraph may be a numbered list.
+
+    Word COM list checks are expensive. This cheap filter avoids calling COM for
+    every ordinary body paragraph in large documents.
+    """
+    W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+
+    pPr = para._element.find(f"{{{W}}}pPr")
+    if pPr is not None:
+        if pPr.find(f"{{{W}}}numPr") is not None:
+            return True
+        pStyle = pPr.find(f"{{{W}}}pStyle")
+        style_id = pStyle.get(f"{{{W}}}val") if pStyle is not None else None
+    else:
+        style_id = None
+
+    if not style_id or _style_by_id is None:
+        return False
+
+    style = _style_by_id.get(style_id)
+    visited = set()
+    while style is not None:
+        sid = id(style)
+        if sid in visited:
+            break
+        visited.add(sid)
+
+        style_pPr = style.element.find(f"{{{W}}}pPr")
+        if style_pPr is not None and style_pPr.find(f"{{{W}}}numPr") is not None:
+            return True
+
+        based_on = style.element.find(f"{{{W}}}basedOn")
+        if based_on is None:
+            break
+        based_id = based_on.get(f"{{{W}}}val")
+        if not based_id:
+            break
+        style = _style_by_id.get(based_id)
+
+    return False
 
 
 def auto_detect_and_format(doc, settings, list_resolver=None, *, _paragraphs=None, _outline_cache=None, _style_by_id=None, _toc_style_ids=None) -> None:
@@ -335,15 +395,11 @@ def auto_detect_and_format(doc, settings, list_resolver=None, *, _paragraphs=Non
         if level == 0 and identify_chinese_title(text):
             level = 1
 
-        # Priority 2: List/letter item detection → Level 4/5
-        if level == 0:
-            level = identify_list_item(text)
-
-        # Priority 3: Multi-level list resolver (COM or docx) as fallback.
+        # Priority 2: Multi-level list resolver (COM or docx) as fallback.
         # Only trust list resolver when it can prove the paragraph is a
         # heading (via list text for COM) to avoid treating body list
         # items (e.g. "1）第一项") as titles.
-        if level == 0 and list_resolver is not None:
+        if level == 0 and list_resolver is not None and _has_numbering_hint(para, _style_by_id):
             list_level = list_resolver.get_list_level(para)
             if list_level is not None and 1 <= list_level <= 5:
                 # COM resolver: verify via rendered list text
@@ -351,11 +407,16 @@ def auto_detect_and_format(doc, settings, list_resolver=None, *, _paragraphs=Non
                     list_text = list_resolver.get_list_text(para)
                     if list_text:
                         normalized = normalize_number_string(list_text)
-                        if identify_level_from_number(normalized) > 0:
-                            level = list_level
+                        derived_level = identify_level_from_number(normalized)
+                        if derived_level > 0:
+                            level = derived_level
                 # Docx resolver: cannot reliably distinguish heading lists
                 # from body lists, so skip to avoid false positives.
                 # Text already matched above if it looks like a title.
+
+                # Without rendered list text, do not infer title levels from
+                # body list numbering.  This avoids turning "1）" / "（1）"
+                # style body items into level-4 titles.
 
         if 1 <= level <= 5:
             apply_title_style(

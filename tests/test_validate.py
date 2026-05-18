@@ -24,6 +24,10 @@ from tvba_core_validate import (
     _check_figure_table_space,
     _check_cover_title_size,
     _check_appendix_body_size,
+    _check_chairman_number,
+    _check_paragraph_spacing,
+    _check_caption_alignment,
+    _check_table_fixed_dimensions,
 )
 from tvba_settings import FormatSettings, ValidationRules, TableSettings
 
@@ -283,41 +287,9 @@ class TestCheckTableFontSize:
 
 
 class TestCheckTableRowHeight:
-    """Section 6 Mode A: 检查表格行高非0.6cm"""
+    """Check that fixed table row heights are flagged (should be auto-fit)."""
 
-    def test_flags_wrong_row_height(self):
-        doc = Document()
-        table = doc.add_table(rows=1, cols=1)
-        tr = table.rows[0]._tr
-        W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
-        trPr = etree.SubElement(tr, f"{{{W}}}trPr")
-        trHeight = etree.SubElement(trPr, f"{{{W}}}trHeight")
-        trHeight.set(f"{{{W}}}val", "1000")  # much larger
-        trHeight.set(f"{{{W}}}hRule", "exact")
-
-        settings = FormatSettings(table=TableSettings(row_height_cm=0.6))
-        issues: list[ValidationIssue] = []
-        _check_table_row_height(table, settings, issues)
-        assert len(issues) > 0
-
-    def test_passes_correct_row_height(self):
-        doc = Document()
-        table = doc.add_table(rows=1, cols=1)
-        tr = table.rows[0]._tr
-        W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
-        trPr = etree.SubElement(tr, f"{{{W}}}trPr")
-        trHeight = etree.SubElement(trPr, f"{{{W}}}trHeight")
-        # 0.6cm * 567 twips/cm = 340.2 twips
-        trHeight.set(f"{{{W}}}val", "340")
-        trHeight.set(f"{{{W}}}hRule", "exact")
-
-        settings = FormatSettings(table=TableSettings(row_height_cm=0.6))
-        issues: list[ValidationIssue] = []
-        _check_table_row_height(table, settings, issues)
-        assert len(issues) == 0
-
-    def test_skips_non_exact_rule(self):
-        """Only check rows with hRule='exact'"""
+    def test_flags_exact_row_height(self):
         doc = Document()
         table = doc.add_table(rows=1, cols=1)
         tr = table.rows[0]._tr
@@ -325,9 +297,34 @@ class TestCheckTableRowHeight:
         trPr = etree.SubElement(tr, f"{{{W}}}trPr")
         trHeight = etree.SubElement(trPr, f"{{{W}}}trHeight")
         trHeight.set(f"{{{W}}}val", "1000")
-        trHeight.set(f"{{{W}}}hRule", "atLeast")  # not "exact"
+        trHeight.set(f"{{{W}}}hRule", "exact")
 
-        settings = FormatSettings(table=TableSettings(row_height_cm=0.6))
+        settings = FormatSettings()
+        issues: list[ValidationIssue] = []
+        _check_table_row_height(table, settings, issues)
+        assert len(issues) > 0
+
+    def test_passes_without_fixed_height(self):
+        doc = Document()
+        table = doc.add_table(rows=1, cols=1)
+        # No trHeight element at all — auto-fit, should pass
+        settings = FormatSettings()
+        issues: list[ValidationIssue] = []
+        _check_table_row_height(table, settings, issues)
+        assert len(issues) == 0
+
+    def test_passes_at_least_reasonable(self):
+        """atLeast with reasonable value should not flag."""
+        doc = Document()
+        table = doc.add_table(rows=1, cols=1)
+        tr = table.rows[0]._tr
+        W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+        trPr = etree.SubElement(tr, f"{{{W}}}trPr")
+        trHeight = etree.SubElement(trPr, f"{{{W}}}trHeight")
+        trHeight.set(f"{{{W}}}val", "340")
+        trHeight.set(f"{{{W}}}hRule", "atLeast")
+
+        settings = FormatSettings()
         issues: list[ValidationIssue] = []
         _check_table_row_height(table, settings, issues)
         assert len(issues) == 0
@@ -513,6 +510,43 @@ class TestCheckFigureTableSpace:
         assert len(issues) == 0
 
 
+class TestCheckChairmanNumber:
+    """Section 6: 检查负责人/审定人信息."""
+
+    def test_flags_empty_chairman(self):
+        doc = Document()
+        para = doc.add_paragraph("负责人：")
+        issues: list[ValidationIssue] = []
+        _check_chairman_number([para], [], issues)
+        assert len(issues) > 0
+
+    def test_passes_valid_chairman(self):
+        doc = Document()
+        para = doc.add_paragraph("负责人：张三")
+        issues: list[ValidationIssue] = []
+        _check_chairman_number([para], [], issues)
+        assert len(issues) == 0
+
+    def test_passes_shenheren(self):
+        doc = Document()
+        para = doc.add_paragraph("审定人：李四")
+        issues: list[ValidationIssue] = []
+        _check_chairman_number([para], [], issues)
+        assert len(issues) == 0
+
+    def test_flags_no_chairman_at_all(self):
+        doc = Document()
+        para = doc.add_paragraph("普通段落内容")
+        issues: list[ValidationIssue] = []
+        _check_chairman_number([para], [], issues)
+        assert len(issues) > 0  # Should warn about missing chairman
+
+    def test_skips_empty_document(self):
+        issues: list[ValidationIssue] = []
+        _check_chairman_number([], [], issues)
+        assert len(issues) == 0
+
+
 class TestValidateDocument:
     """Integration tests for the validate_document orchestrator."""
 
@@ -575,3 +609,144 @@ class TestValidateDocument:
         )
         issues = validate_document(path, settings)
         assert issues == []
+
+
+class TestCheckParagraphSpacing:
+    """Check that paragraphs with non-zero before/after spacing are flagged."""
+
+    def test_flags_nonzero_before(self):
+        doc = Document()
+        para = doc.add_paragraph("正文")
+        _set_spacing(para, before=480)
+        issues: list[ValidationIssue] = []
+        _check_paragraph_spacing(para, issues)
+        assert len(issues) > 0
+
+    def test_flags_nonzero_after(self):
+        doc = Document()
+        para = doc.add_paragraph("正文")
+        _set_spacing(para, after=480)
+        issues: list[ValidationIssue] = []
+        _check_paragraph_spacing(para, issues)
+        assert len(issues) > 0
+
+    def test_flags_nonzero_before_lines(self):
+        doc = Document()
+        para = doc.add_paragraph("正文")
+        _set_spacing(para, before_lines=100)
+        issues: list[ValidationIssue] = []
+        _check_paragraph_spacing(para, issues)
+        assert len(issues) > 0
+
+    def test_passes_zero_spacing(self):
+        doc = Document()
+        para = doc.add_paragraph("正文")
+        _set_spacing(para, before=0, after=0, before_lines=0, after_lines=0)
+        issues: list[ValidationIssue] = []
+        _check_paragraph_spacing(para, issues)
+        assert len(issues) == 0
+
+    def test_skips_empty_paragraph(self):
+        doc = Document()
+        para = doc.add_paragraph("   ")
+        _set_spacing(para, before=480)
+        issues: list[ValidationIssue] = []
+        _check_paragraph_spacing(para, issues)
+        assert len(issues) == 0
+
+
+class TestCheckCaptionAlignment:
+    """Check that table/figure captions are centered."""
+
+    def test_flags_non_centered_table_caption(self):
+        doc = Document()
+        para = doc.add_paragraph("表 1-1 示例")
+        _set_jc(para, "left")
+        issues: list[ValidationIssue] = []
+        _check_caption_alignment(para, issues)
+        assert len(issues) > 0
+
+    def test_flags_non_centered_figure_caption(self):
+        doc = Document()
+        para = doc.add_paragraph("图 1-1 示例")
+        _set_jc(para, "both")
+        issues: list[ValidationIssue] = []
+        _check_caption_alignment(para, issues)
+        assert len(issues) > 0
+
+    def test_passes_centered_caption(self):
+        doc = Document()
+        para = doc.add_paragraph("表 1-1 示例")
+        _set_jc(para, "center")
+        issues: list[ValidationIssue] = []
+        _check_caption_alignment(para, issues)
+        assert len(issues) == 0
+
+    def test_skips_non_caption_text(self):
+        doc = Document()
+        para = doc.add_paragraph("普通正文")
+        issues: list[ValidationIssue] = []
+        _check_caption_alignment(para, issues)
+        assert len(issues) == 0
+
+
+class TestCheckTableFixedDimensions:
+    """Check that tables don't have fixed dimensions."""
+
+    def test_flags_fixed_table_width(self):
+        doc = Document()
+        table = doc.add_table(rows=1, cols=1)
+        # Set fixed table width via w:tblW
+        tblPr = table._element.find(f"{{{W}}}tblPr")
+        if tblPr is None:
+            tblPr = etree.SubElement(table._element, f"{{{W}}}tblPr")
+        tblW = etree.SubElement(tblPr, f"{{{W}}}tblW")
+        tblW.set(f"{{{W}}}type", "dxa")
+        tblW.set(f"{{{W}}}w", "5000")
+        issues: list[ValidationIssue] = []
+        _check_table_fixed_dimensions(table, issues)
+        assert len(issues) > 0
+
+    def test_flags_fixed_layout(self):
+        doc = Document()
+        table = doc.add_table(rows=1, cols=1)
+        tblPr = table._element.find(f"{{{W}}}tblPr")
+        if tblPr is None:
+            tblPr = etree.SubElement(table._element, f"{{{W}}}tblPr")
+        tblLayout = etree.SubElement(tblPr, f"{{{W}}}tblLayout")
+        tblLayout.set(f"{{{W}}}type", "fixed")
+        issues: list[ValidationIssue] = []
+        _check_table_fixed_dimensions(table, issues)
+        assert len(issues) > 0
+
+    def test_passes_auto_fit_table(self):
+        doc = Document()
+        table = doc.add_table(rows=1, cols=1)
+        issues: list[ValidationIssue] = []
+        _check_table_fixed_dimensions(table, issues)
+        assert len(issues) == 0
+
+
+def _set_spacing(para, before=0, after=0, before_lines=0, after_lines=0):
+    """Set spacing attributes on a paragraph at OOXML level."""
+    pPr = para._element.find(f"{{{W}}}pPr")
+    if pPr is None:
+        pPr = etree.SubElement(para._element, f"{{{W}}}pPr")
+    spacing = pPr.find(f"{{{W}}}spacing")
+    if spacing is None:
+        spacing = etree.SubElement(pPr, f"{{{W}}}spacing")
+    spacing.set(f"{{{W}}}before", str(before))
+    spacing.set(f"{{{W}}}after", str(after))
+    spacing.set(f"{{{W}}}beforeLines", str(before_lines))
+    spacing.set(f"{{{W}}}afterLines", str(after_lines))
+
+
+def _set_jc(para, val: str):
+    """Set w:jc alignment on a paragraph at OOXML level."""
+    pPr = para._element.find(f"{{{W}}}pPr")
+    if pPr is None:
+        pPr = etree.SubElement(para._element, f"{{{W}}}pPr")
+    jc = pPr.find(f"{{{W}}}jc")
+    if jc is None:
+        jc = etree.SubElement(pPr, f"{{{W}}}jc")
+    jc.set(f"{{{W}}}val", val)

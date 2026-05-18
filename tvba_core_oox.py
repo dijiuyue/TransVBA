@@ -3,9 +3,64 @@
 Thin wrappers that look like python-docx API but operate at the lxml level
 for attributes that python-docx does not expose.
 """
+from dataclasses import dataclass
 from lxml import etree
 
 W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+
+
+@dataclass(frozen=True)
+class ParagraphFormatSpec:
+    """Unified paragraph formatting specification.
+
+    Replaces scattered per-module formatting logic with a single spec
+    that can be applied consistently across body, titles, captions, and headers.
+    """
+    eastasia_font: str
+    ascii_font: str = "Times New Roman"
+    size_pt: float = 12.0
+    bold: bool = False
+    alignment: str | None = None  # "左对齐", "居中", "右对齐", "两端对齐", or None to skip
+    before_lines: float = 0.0
+    after_lines: float = 0.0
+    line_spacing: float | None = None  # None to skip
+    left_chars: float = 0.0
+    right_chars: float = 0.0
+    special_kind: str = "无"  # "无", "首行缩进", "悬挂缩进"
+    special_chars: float = 0.0
+    outline_level: int | None = None  # 0-8 (0-indexed), None to skip
+
+    def apply_to(self, para) -> None:
+        """Apply this spec to a paragraph, formatting all runs."""
+        format_all_runs_in_paragraph(
+            para,
+            ascii_font=self.ascii_font,
+            eastasia_font=self.eastasia_font,
+            size_pt=self.size_pt,
+            bold=self.bold,
+        )
+
+        if self.alignment is not None:
+            _ALIGN_MAP = {"左对齐": 0, "居中": 1, "右对齐": 2, "两端对齐": 3}
+            para.alignment = _ALIGN_MAP.get(self.alignment, 0)
+
+        apply_indent_chars(
+            para.paragraph_format,
+            left_chars=self.left_chars,
+            right_chars=self.right_chars,
+            special_kind=self.special_kind,
+            special_chars=self.special_chars,
+        )
+
+        apply_paragraph_spacing(
+            para.paragraph_format,
+            before_lines=self.before_lines,
+            after_lines=self.after_lines,
+            line_spacing=self.line_spacing,
+        )
+
+        if self.outline_level is not None:
+            set_outline_level(para, self.outline_level)
 
 
 def _ns(tag: str) -> str:
@@ -60,15 +115,16 @@ def format_all_runs_in_paragraph(para, *, ascii_font: str, eastasia_font: str, s
             szCs = etree.SubElement(rPr, f"{{{W}}}szCs")
         szCs.set(f"{{{W}}}val", half_points)
 
-        # Set bold
-        if bold:
-            b = rPr.find(f"{{{W}}}b")
+        # Set bold explicitly.  Removing w:b is not enough when the paragraph
+        # style or numbering level is bold; w:val="0" overrides inheritance.
+        for tag in ("b", "bCs"):
+            b = rPr.find(f"{{{W}}}{tag}")
             if b is None:
-                etree.SubElement(rPr, f"{{{W}}}b")
-        else:
-            b = rPr.find(f"{{{W}}}b")
-            if b is not None:
-                rPr.remove(b)
+                b = etree.SubElement(rPr, f"{{{W}}}{tag}")
+            if bold:
+                b.attrib.pop(f"{{{W}}}val", None)
+            else:
+                b.set(f"{{{W}}}val", "0")
 
 
 def clear_paragraph_formatting(para) -> None:
@@ -256,7 +312,6 @@ def apply_indent_chars(
 
     special_kind: "无", "首行缩进", "悬挂缩进"
     """
-    # paragraph_format._element is the w:p element; we need w:pPr
     p_elem = paragraph_format._element
     pPr = p_elem.find(_ns("pPr"))
     if pPr is None:
@@ -288,22 +343,136 @@ def apply_indent_chars(
         ind.set(_ns("hanging"), str(int(special_chars * twips_per_char)))
 
 
-def set_before_after_lines(paragraph_format, *, before_lines: float, after_lines: float) -> None:
-    """Set paragraph spacing in line units (w:beforeLines / w:afterLines).
+def apply_indent_cm(
+    paragraph_format,
+    *,
+    left_cm: float = 0.0,
+    right_cm: float = 0.0,
+    special_kind: str = "无",
+    special_chars: float = 0.0,
+    special_cm: float = 0.0,
+) -> None:
+    """Apply indentation with cm-based left/right/special and char-based special.
 
-    1 line = 100 hundredths of a line (same as VBA LineUnitBefore).
+    Left/right indentation in cm. Special indent in either cm or chars.
+    If both special_cm and special_chars are given, special_cm takes precedence.
+    1 cm = 567 twips, 1 char = 240 twips (12 pt).
     """
-    # paragraph_format._element is the w:p element; we need w:pPr
     p_elem = paragraph_format._element
     pPr = p_elem.find(_ns("pPr"))
     if pPr is None:
         pPr = etree.SubElement(p_elem, _ns("pPr"))
+    ind = pPr.find(_ns("ind"))
+    if ind is None:
+        ind = etree.SubElement(pPr, _ns("ind"))
+
+    twips_per_cm = 567
+    twips_per_char = 240
+
+    if left_cm:
+        ind.set(_ns("left"), str(int(left_cm * twips_per_cm)))
+    else:
+        ind.set(_ns("left"), "0")
+
+    if right_cm:
+        ind.set(_ns("right"), str(int(right_cm * twips_per_cm)))
+    else:
+        ind.set(_ns("right"), "0")
+
+    for attr in (_ns("firstLine"), _ns("hanging")):
+        if attr in ind.attrib:
+            del ind.attrib[attr]
+
+    if special_kind == "首行缩进":
+        if special_cm:
+            ind.set(_ns("firstLine"), str(int(special_cm * twips_per_cm)))
+        elif special_chars:
+            ind.set(_ns("firstLine"), str(int(special_chars * twips_per_char)))
+    elif special_kind == "悬挂缩进":
+        if special_cm:
+            ind.set(_ns("hanging"), str(int(special_cm * twips_per_cm)))
+        elif special_chars:
+            ind.set(_ns("hanging"), str(int(special_chars * twips_per_char)))
+
+
+def set_before_after_lines(paragraph_format, *, before_lines: float, after_lines: float) -> None:
+    """Apply paragraph spacing via the unified helper (legacy wrapper)."""
+    apply_paragraph_spacing(paragraph_format, before_lines=before_lines, after_lines=after_lines)
+
+
+def apply_paragraph_spacing(
+    paragraph_format,
+    *,
+    before_lines: float = 0.0,
+    after_lines: float = 0.0,
+    line_spacing: float | None = None,
+    line_rule: str = "auto",
+) -> None:
+    """Unified paragraph spacing helper.
+
+    - Removes ALL old spacing attributes that could interfere:
+      w:before, w:after, w:beforeLines, w:afterLines,
+      w:beforeAutospacing, w:afterAutospacing
+    - Writes explicit beforeLines / afterLines in line units.
+    - When before/after is 0, also writes w:before="0" / w:after="0"
+      to prevent inherited style spacing from overriding.
+    - Optionally sets line spacing (w:line / w:lineRule).
+    """
+    p_elem = paragraph_format._element
+    pPr = p_elem.find(_ns("pPr"))
+    if pPr is None:
+        pPr = etree.SubElement(p_elem, _ns("pPr"))
+
     spacing = pPr.find(_ns("spacing"))
+
+    # Remove ALL old spacing attributes — any of these can interfere
+    # with the template-defined spacing values.
+    dirty_attrs = (
+        "before", "after", "beforeLines", "afterLines",
+        "beforeAutospacing", "afterAutospacing",
+    )
+    if spacing is not None:
+        for attr in dirty_attrs:
+            key = _ns(attr)
+            if key in spacing.attrib:
+                del spacing.attrib[key]
+
+    # Write explicit before/after in point units (w:before/w:after) to
+    # prevent inherited style spacing from overriding when targeting 0.
     if spacing is None:
         spacing = etree.SubElement(pPr, _ns("spacing"))
+    spacing.set(_ns("before"), "0" if before_lines == 0 else str(int(before_lines * 240)))
+    spacing.set(_ns("after"), "0" if after_lines == 0 else str(int(after_lines * 240)))
+
+    # Write beforeLines / afterLines as primary spacing control
     spacing.set(_ns("beforeLines"), str(int(before_lines * 100)))
     spacing.set(_ns("afterLines"), str(int(after_lines * 100)))
 
+    # Disable auto-spacing
+    spacing.set(_ns("beforeAutospacing"), "0")
+    spacing.set(_ns("afterAutospacing"), "0")
+
+    # Optional line spacing
+    if line_spacing is not None:
+        spacing.set(_ns("line"), str(int(line_spacing * 240)))
+        spacing.set(_ns("lineRule"), line_rule)
+
+
+def set_paragraph_alignment(para, alignment: str) -> None:
+    """Write w:jc directly at OOXML level, ensuring it overrides style-based alignment.
+
+    alignment must be one of: "left", "center", "right", "both", "distribute".
+    Use this instead of python-docx para.alignment when style inheritance
+    might otherwise override the setting.
+    """
+    p_elem = para._element
+    pPr = p_elem.find(_ns("pPr"))
+    if pPr is None:
+        pPr = etree.SubElement(p_elem, _ns("pPr"))
+    jc = pPr.find(_ns("jc"))
+    if jc is None:
+        jc = etree.SubElement(pPr, _ns("jc"))
+    jc.set(_ns("val"), alignment)
 
 from tvba_utils import cm_to_points
 
@@ -532,3 +701,89 @@ def set_row_height_at_least(row, height_cm: float) -> None:
     twips = int(points * 20)
     trHeight.set(_ns("val"), str(twips))
     trHeight.set(_ns("hRule"), "atLeast")
+
+
+def get_effective_run_fonts(run, doc=None) -> dict[str, str | None]:
+    """Resolve effective fonts for a run by walking the style inheritance chain.
+
+    Returns dict with keys: "ascii", "hAnsi", "eastAsia".
+    Values are font names, "theme:<themeName>" if set via theme reference,
+    or None if not resolvable at all.
+    """
+    fonts = {"ascii": None, "hAnsi": None, "eastAsia": None}
+    font_attr_map = {"ascii": "ascii", "hAnsi": "hAnsi", "eastAsia": "eastAsia"}
+    theme_attr_map = {"ascii": "asciiTheme", "hAnsi": "hAnsiTheme", "eastAsia": "eastAsiaTheme"}
+
+    def _read_fonts_from_rfonts(rFonts):
+        for key, attr in font_attr_map.items():
+            if fonts[key] is None:
+                val = rFonts.get(_ns(attr))
+                if val:
+                    fonts[key] = val
+        for key, attr in theme_attr_map.items():
+            if fonts[key] is None:
+                val = rFonts.get(_ns(attr))
+                if val:
+                    fonts[key] = f"theme:{val}"
+
+    # 1. Check run direct w:rPr/w:rFonts
+    rPr = run._element.find(_ns("rPr"))
+    if rPr is not None:
+        rFonts = rPr.find(_ns("rFonts"))
+        if rFonts is not None:
+            _read_fonts_from_rfonts(rFonts)
+
+    if all(fonts[k] for k in fonts):
+        return fonts
+
+    # 2. Check paragraph style run properties (and basedOn chain)
+    try:
+        para = run._parent  # python-docx paragraph
+    except Exception:
+        return fonts
+
+    style = para.style if para is not None else None
+    visited = set()
+    while style is not None:
+        style_id = id(style)
+        if style_id in visited:
+            break
+        visited.add(style_id)
+
+        style_rPr = style.element.find(_ns("rPr"))
+        if style_rPr is not None:
+            style_rFonts = style_rPr.find(_ns("rFonts"))
+            if style_rFonts is not None:
+                _read_fonts_from_rfonts(style_rFonts)
+
+        if all(fonts[k] for k in fonts):
+            return fonts
+
+        # Follow basedOn chain
+        basedOn = style.element.find(_ns("basedOn"))
+        if basedOn is None:
+            break
+        based_on_val = basedOn.get(_ns("val"))
+        if based_on_val is None or doc is None:
+            break
+        try:
+            style = doc.styles[based_on_val]
+        except KeyError:
+            break
+
+    # 3. Check document defaults
+    if doc is not None:
+        try:
+            doc_defaults = doc.styles.element.find(_ns("docDefaults"))
+            if doc_defaults is not None:
+                rPrDefault = doc_defaults.find(_ns("rPrDefault"))
+                if rPrDefault is not None:
+                    rPr = rPrDefault.find(_ns("rPr"))
+                    if rPr is not None:
+                        rFonts = rPr.find(_ns("rFonts"))
+                        if rFonts is not None:
+                            _read_fonts_from_rfonts(rFonts)
+        except Exception:
+            pass
+
+    return fonts

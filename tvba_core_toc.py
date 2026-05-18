@@ -12,7 +12,7 @@ Corresponds to VBA FormatModule.bas:
 """
 import re
 
-from tvba_core_oox import set_far_east_font, set_ascii_font, set_run_font_size
+from tvba_core_oox import apply_paragraph_spacing, set_far_east_font, set_ascii_font, set_run_font_size
 from tvba_utils import clean_para_text, size_label_to_points
 
 # Matches numeric prefix like "1", "1.1", "1.1.2" (halfwidth or fullwidth digits/dots)
@@ -133,16 +133,10 @@ def apply_toc_title_style(para, defaults) -> None:
         set_far_east_font(run, defaults.title_font)
         set_run_font_size(run, size_label_to_points(defaults.title_size))
         run.font.bold = defaults.title_bold
-    # Line spacing
-    pPr = para._element.find(".//w:pPr", {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"})
-    if pPr is not None:
-        from lxml import etree
-        W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
-        spacing = pPr.find(f"{{{W}}}spacing")
-        if spacing is None:
-            spacing = etree.SubElement(pPr, f"{{{W}}}spacing")
-        spacing.set(f"{{{W}}}line", str(int(defaults.title_spacing * 240)))
-        spacing.set(f"{{{W}}}lineRule", "auto")
+    apply_paragraph_spacing(
+        para.paragraph_format,
+        line_spacing=defaults.title_spacing,
+    )
 
 
 def apply_toc_entry_style(doc, para, level: int, defaults) -> None:
@@ -177,14 +171,64 @@ def apply_toc_entry_style(doc, para, level: int, defaults) -> None:
 
 
 def refresh_toc(doc, defaults, *, _paragraphs=None) -> None:
-    """Refresh all TOC paragraphs in document."""
+    """Refresh all TOC paragraphs in document.
+
+    Also ensures exactly one blank line after the TOC title.
+    """
+    from lxml import etree
+    W_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+
     paragraphs = _paragraphs if _paragraphs is not None else doc.paragraphs
-    for para in paragraphs:
+    for i, para in enumerate(paragraphs):
         text = clean_para_text(para.text)
         if is_toc_title_line(text):
             apply_toc_title_style(para, defaults)
+            # Ensure one blank line after TOC title
+            _ensure_one_blank_after(doc, paragraphs, i, para._element, W_NS)
         elif is_toc_entry_line(text):
             level = identify_toc_level(text)
             if level == 0:
                 level = 1
             apply_toc_entry_style(doc, para, level, defaults)
+
+
+def _ensure_one_blank_after(doc, paragraphs: list, idx: int, para_elem, W_NS: str) -> None:
+    """Ensure exactly one blank paragraph after the given paragraph.
+
+    Removes extra empty paragraphs and inserts one if none exists.
+    """
+    from lxml import etree
+    body = doc.element.body
+    body_children = list(body)
+    try:
+        elem_idx = body_children.index(para_elem)
+    except ValueError:
+        return
+
+    # Find consecutive empty paragraphs after this element
+    to_remove = []
+    for j in range(elem_idx + 1, len(body_children)):
+        next_elem = body_children[j]
+        tag = next_elem.tag.split("}")[-1] if "}" in next_elem.tag else next_elem.tag
+        if tag != "p":
+            break
+        # Check if empty
+        texts = []
+        for t in next_elem.findall(f".//{{{W_NS}}}t"):
+            if t.text:
+                texts.append(t.text)
+        if not "".join(texts).strip():
+            to_remove.append(next_elem)
+        else:
+            break
+
+    if len(to_remove) > 1:
+        # Remove extras, keep one
+        for extra in to_remove[1:]:
+            body.remove(extra)
+    elif len(to_remove) == 0:
+        # Insert one blank paragraph
+        new_p = etree.SubElement(body, f"{{{W_NS}}}p")
+        # Move it right after the TOC title
+        body.remove(new_p)
+        body.insert(elem_idx + 1, new_p)

@@ -22,7 +22,8 @@ def _get_run_font_size_pt(para) -> float | None:
 
 
 def _get_run_bold(para) -> bool:
-    return para._element.find(f".//{{{W}}}r/{{{W}}}rPr/{{{W}}}b") is not None
+    b = para._element.find(f".//{{{W}}}r/{{{W}}}rPr/{{{W}}}b")
+    return b is not None and b.get(f"{{{W}}}val") != "0"
 
 
 def _get_line_spacing_val(para) -> int | None:

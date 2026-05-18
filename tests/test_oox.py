@@ -11,7 +11,7 @@ from tvba_core_oox import (
     set_style_font_size,
     set_outline_level,
     apply_indent_chars,
-    set_before_after_lines,
+    apply_paragraph_spacing,
     set_table_layout_window,
     set_table_layout_content,
     set_table_borders,
@@ -104,11 +104,11 @@ class TestApplyIndentChars:
         ind = pPr.find("w:ind", NSMAP)
         assert ind.get("{http://schemas.openxmlformats.org/wordprocessingml/2006/main}hanging") == "480"
 
-class TestSetBeforeAfterLines:
+class TestApplyParagraphSpacing:
     def test_sets_beforeLines_and_afterLines(self):
         doc = Document()
         para = doc.add_paragraph("Text")
-        set_before_after_lines(
+        apply_paragraph_spacing(
             para.paragraph_format,
             before_lines=0.5,
             after_lines=0.5,
@@ -118,6 +118,38 @@ class TestSetBeforeAfterLines:
         assert spacing is not None
         assert spacing.get("{http://schemas.openxmlformats.org/wordprocessingml/2006/main}beforeLines") == "50"
         assert spacing.get("{http://schemas.openxmlformats.org/wordprocessingml/2006/main}afterLines") == "50"
+
+    def test_sets_line_spacing(self):
+        doc = Document()
+        para = doc.add_paragraph("Text")
+        apply_paragraph_spacing(
+            para.paragraph_format,
+            line_spacing=1.5,
+        )
+        pPr = para._element.find(".//w:pPr", NSMAP)
+        spacing = pPr.find("w:spacing", NSMAP)
+        assert spacing is not None
+        assert spacing.get("{http://schemas.openxmlformats.org/wordprocessingml/2006/main}line") == "360"
+        assert spacing.get("{http://schemas.openxmlformats.org/wordprocessingml/2006/main}lineRule") == "auto"
+
+    def test_cleans_old_spacing_attrs(self):
+        doc = Document()
+        para = doc.add_paragraph("Text")
+        # Ensure pPr exists, then inject dirty spacing attribute
+        from lxml import etree
+        W_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+        pPr = para._element.find(f".//{{{W_NS}}}pPr")
+        if pPr is None:
+            pPr = etree.SubElement(para._element, f"{{{W_NS}}}pPr")
+        sp = etree.SubElement(pPr, f"{{{W_NS}}}spacing")
+        sp.set(f"{{{W_NS}}}beforeAutospacing", "1")
+        apply_paragraph_spacing(
+            para.paragraph_format,
+            before_lines=0.0,
+            after_lines=0.0,
+        )
+        spacing = pPr.find(f"{{{W_NS}}}spacing")
+        assert spacing.get(f"{{{W_NS}}}beforeAutospacing") == "0"
 
 class TestTableLayout:
     def test_set_window_layout(self):

@@ -25,7 +25,7 @@ def _get_run_font_size_pt(para) -> float | None:
 
 def _get_run_bold(para) -> bool:
     b = para._element.find(f".//{{{W}}}r/{{{W}}}rPr/{{{W}}}b")
-    return b is not None
+    return b is not None and b.get(f"{{{W}}}val") != "0"
 
 
 def _get_run_eastasia_font(para) -> str | None:

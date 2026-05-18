@@ -18,11 +18,16 @@ class ValidationRules:
     check_figure_table_space: bool = False
     check_forbidden_words: bool = False
     forbidden_words: tuple[str, ...] = ()
+    forbidden_replacements: dict[str, str] = field(default_factory=dict)
     check_figure_position: bool = False
     check_brackets: bool = False
     check_period: bool = False
     check_ascii_font: bool = False
     check_chinese_font: bool = False
+    check_spacing: bool = False
+    check_caption_alignment: bool = False
+    check_table_fixed_dimensions: bool = False
+    check_presidential_order: bool = False
 
 
 @dataclass(frozen=True)
@@ -50,6 +55,7 @@ class BodySettings:
     right_indent_cm: float = 0.0
     special_indent: str = "首行缩进"
     special_indent_chars: float = 2.0
+    modify_content: bool = False  # If True, apply brackets, periods, forbidden word replacement
 
 
 @dataclass(frozen=True)
@@ -58,6 +64,9 @@ class TableSettings:
     title_font: str = "黑体"
     title_size: str = "小四"
     title_bold: bool = True
+    title_alignment: str = "居中"
+    title_before_lines: float = 0.0
+    title_after_lines: float = 0.0
     title_spacing: float = 1.5
     title_left_indent_cm: float = 0.0
     title_right_indent_cm: float = 0.0
@@ -66,7 +75,7 @@ class TableSettings:
     body_font: str = "宋体"
     body_size: str = "五号"
     line_width_pt: float = 0.5
-    row_height_cm: float = 0.7
+    row_height_cm: float = 0.0  # 0 means auto-fit (no fixed row height)
     spacing: float = 1.0
     auto_fit_mode: str = "window"
 
@@ -76,7 +85,10 @@ class FigureSettings:
     """Figure caption formatting settings."""
     title_font: str = "黑体"
     title_size: str = "小四"
-    title_bold: bool = True
+    title_bold: bool = False
+    title_alignment: str = "居中"
+    title_before_lines: float = 0.0
+    title_after_lines: float = 0.0
     title_spacing: float = 1.5
     title_left_indent_cm: float = 0.0
     title_right_indent_cm: float = 0.0
@@ -159,4 +171,5 @@ class FormatSettings:
     auto_detect_numeric_titles: bool = True
     auto_detect_include_list_paragraphs: bool = True
     remember_settings: bool = True
-    prefer_com_resolver: bool = False
+    prefer_com_resolver: bool = True
+    format_presidential_order: bool = True

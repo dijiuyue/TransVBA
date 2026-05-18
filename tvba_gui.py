@@ -198,6 +198,10 @@ class TvbaMainWindow(tk.Tk):
         self.spn_body_special = ttk.Spinbox(frame, from_=0.0, to=10.0, increment=0.5)
         self.spn_body_special.grid(row=row, column=1, sticky=tk.EW, padx=5, pady=3)
 
+        row += 1
+        self.var_body_modify = tk.BooleanVar()
+        ttk.Checkbutton(frame, text="同时修正内容（括号、句号）", variable=self.var_body_modify).grid(row=row, column=0, columnspan=2, sticky=tk.W, padx=5, pady=5)
+
         return frame
 
     def _build_title_panel(self, level: int = 1):
@@ -278,6 +282,21 @@ class TvbaMainWindow(tk.Tk):
         self.spn_table_title_spacing.grid(row=row, column=1, sticky=tk.EW, padx=5, pady=3)
 
         row += 1
+        ttk.Label(frame, text="标题对齐:").grid(row=row, column=0, sticky=tk.W, padx=5, pady=3)
+        self.cmb_table_title_align = ttk.Combobox(frame, values=["左对齐", "居中", "右对齐", "两端对齐"], state="readonly")
+        self.cmb_table_title_align.grid(row=row, column=1, sticky=tk.EW, padx=5, pady=3)
+
+        row += 1
+        ttk.Label(frame, text="标题段前(行):").grid(row=row, column=0, sticky=tk.W, padx=5, pady=3)
+        self.spn_table_title_before = ttk.Spinbox(frame, from_=0.0, to=3.0, increment=0.5)
+        self.spn_table_title_before.grid(row=row, column=1, sticky=tk.EW, padx=5, pady=3)
+
+        row += 1
+        ttk.Label(frame, text="标题段后(行):").grid(row=row, column=0, sticky=tk.W, padx=5, pady=3)
+        self.spn_table_title_after = ttk.Spinbox(frame, from_=0.0, to=3.0, increment=0.5)
+        self.spn_table_title_after.grid(row=row, column=1, sticky=tk.EW, padx=5, pady=3)
+
+        row += 1
         ttk.Label(frame, text="正文字体:").grid(row=row, column=0, sticky=tk.W, padx=5, pady=3)
         self.cmb_table_body_font = ttk.Combobox(frame, values=["宋体", "黑体", "楷体", "仿宋"], state="readonly")
         self.cmb_table_body_font.grid(row=row, column=1, sticky=tk.EW, padx=5, pady=3)
@@ -335,6 +354,21 @@ class TvbaMainWindow(tk.Tk):
         self.spn_figure_title_spacing = ttk.Spinbox(frame, from_=1.0, to=3.0, increment=0.5)
         self.spn_figure_title_spacing.grid(row=row, column=1, sticky=tk.EW, padx=5, pady=3)
 
+        row += 1
+        ttk.Label(frame, text="标题对齐:").grid(row=row, column=0, sticky=tk.W, padx=5, pady=3)
+        self.cmb_figure_title_align = ttk.Combobox(frame, values=["左对齐", "居中", "右对齐", "两端对齐"], state="readonly")
+        self.cmb_figure_title_align.grid(row=row, column=1, sticky=tk.EW, padx=5, pady=3)
+
+        row += 1
+        ttk.Label(frame, text="标题段前(行):").grid(row=row, column=0, sticky=tk.W, padx=5, pady=3)
+        self.spn_figure_title_before = ttk.Spinbox(frame, from_=0.0, to=3.0, increment=0.5)
+        self.spn_figure_title_before.grid(row=row, column=1, sticky=tk.EW, padx=5, pady=3)
+
+        row += 1
+        ttk.Label(frame, text="标题段后(行):").grid(row=row, column=0, sticky=tk.W, padx=5, pady=3)
+        self.spn_figure_title_after = ttk.Spinbox(frame, from_=0.0, to=3.0, increment=0.5)
+        self.spn_figure_title_after.grid(row=row, column=1, sticky=tk.EW, padx=5, pady=3)
+
         return frame
 
     def _build_advanced_panel(self):
@@ -345,12 +379,88 @@ class TvbaMainWindow(tk.Tk):
         ttk.Checkbutton(frame, text="自动识别数字标题", variable=self.var_auto_detect).pack(anchor=tk.W, pady=5)
 
         self.var_include_list = tk.BooleanVar(value=True)
-        ttk.Checkbutton(frame, text="包含列表段落", variable=self.var_include_list).pack(anchor=tk.W, pady=5)
+        ttk.Checkbutton(frame, text="包含列表段落（自动编号标题识别，无 Word COM 时功能受限）", variable=self.var_include_list).pack(anchor=tk.W, pady=5)
 
         self.var_com_resolver = tk.BooleanVar(value=False)
-        ttk.Checkbutton(frame, text="使用 Word COM 读取列表级别(需安装 Word)", variable=self.var_com_resolver).pack(anchor=tk.W, pady=5)
+        ttk.Checkbutton(frame, text="使用 Word COM 读取列表级别（需安装 Microsoft Word）", variable=self.var_com_resolver).pack(anchor=tk.W, pady=5)
+
+        # COM availability indicator
+        com_frame = ttk.Frame(frame)
+        com_frame.pack(anchor=tk.W, pady=5)
+        ttk.Label(com_frame, text="Word COM 状态:").pack(side=tk.LEFT)
+        self.lbl_com_status = ttk.Label(com_frame, text="检测中...")
+        self.lbl_com_status.pack(side=tk.LEFT, padx=5)
+        self.after(100, self._check_com_availability)
+
+        # Separator
+        ttk.Separator(frame, orient="horizontal").pack(fill=tk.X, pady=10)
+
+        # Preset management
+        ttk.Label(frame, text="预设管理", font=("Microsoft YaHei", 10, "bold")).pack(anchor=tk.W, pady=5)
+
+        preset_row = ttk.Frame(frame)
+        preset_row.pack(anchor=tk.W, pady=5, fill=tk.X)
+        ttk.Label(preset_row, text="预设名称:").pack(side=tk.LEFT)
+        self.ent_preset_name = ttk.Entry(preset_row, width=18)
+        self.ent_preset_name.pack(side=tk.LEFT, padx=5)
+        ttk.Button(preset_row, text="保存", command=self._on_save_preset).pack(side=tk.LEFT, padx=2)
+
+        load_row = ttk.Frame(frame)
+        load_row.pack(anchor=tk.W, pady=5, fill=tk.X)
+        ttk.Label(load_row, text="加载预设:").pack(side=tk.LEFT)
+        self.cmb_presets = ttk.Combobox(load_row, state="readonly", width=16)
+        self.cmb_presets.pack(side=tk.LEFT, padx=5)
+        ttk.Button(load_row, text="加载", command=self._on_load_preset).pack(side=tk.LEFT, padx=2)
+        ttk.Button(load_row, text="刷新列表", command=self._refresh_preset_list).pack(side=tk.LEFT, padx=2)
+
+        # Refresh preset list on panel build
+        self._refresh_preset_list()
 
         return frame
+
+    def _check_com_availability(self):
+        """Check if Word COM is available and update the indicator."""
+        try:
+            import win32com.client
+            word = win32com.client.DispatchEx("Word.Application")
+            word.Quit()
+            self.lbl_com_status.config(text="可用", foreground="green")
+        except Exception:
+            self.lbl_com_status.config(text="不可用 (自动编号标题可能无法识别)", foreground="red")
+
+    def _on_save_preset(self):
+        name = self.ent_preset_name.get().strip()
+        if not name:
+            messagebox.showwarning("提示", "请输入预设名称")
+            return
+        try:
+            self._sync_settings_to_controller()
+        except Exception:
+            pass
+        if self.controller.save_preset(name):
+            self._refresh_preset_list()
+            self.status.config(text=f"已保存预设: {name}")
+            messagebox.showinfo("完成", f"预设 '{name}' 已保存")
+        else:
+            messagebox.showerror("错误", "保存预设失败")
+
+    def _on_load_preset(self):
+        name = self.cmb_presets.get()
+        if not name:
+            messagebox.showwarning("提示", "请选择要加载的预设")
+            return
+        if self.controller.load_preset(name):
+            self._populate_from_settings()
+            self.status.config(text=f"已加载预设: {name}")
+        else:
+            messagebox.showerror("错误", f"加载预设 '{name}' 失败")
+
+    def _refresh_preset_list(self):
+        presets = self.controller.list_presets()
+        if hasattr(self, 'cmb_presets'):
+            self.cmb_presets["values"] = presets
+            if presets:
+                self.cmb_presets.current(0)
 
     def _on_tree_select(self, event):
         sel = self.tree.selection()
@@ -408,6 +518,8 @@ class TvbaMainWindow(tk.Tk):
             self.spn_body_right.set(str(s.body.right_indent_cm))
             self.cmb_body_special.set(s.body.special_indent)
             self.spn_body_special.set(str(s.body.special_indent_chars))
+            if hasattr(self, "var_body_modify"):
+                self.var_body_modify.set(s.body.modify_content)
 
         # Titles
         for i in range(1, 6):
@@ -427,6 +539,9 @@ class TvbaMainWindow(tk.Tk):
             self.cmb_table_title_size.set(s.table.title_size)
             self.var_table_title_bold.set(s.table.title_bold)
             self.spn_table_title_spacing.set(str(s.table.title_spacing))
+            self.cmb_table_title_align.set(s.table.title_alignment)
+            self.spn_table_title_before.set(str(s.table.title_before_lines))
+            self.spn_table_title_after.set(str(s.table.title_after_lines))
             self.cmb_table_body_font.set(s.table.body_font)
             self.cmb_table_body_size.set(s.table.body_size)
             self.spn_table_line_width.set(str(s.table.line_width_pt))
@@ -441,6 +556,9 @@ class TvbaMainWindow(tk.Tk):
             self.cmb_figure_title_size.set(s.figure.title_size)
             self.var_figure_title_bold.set(s.figure.title_bold)
             self.spn_figure_title_spacing.set(str(s.figure.title_spacing))
+            self.cmb_figure_title_align.set(s.figure.title_alignment)
+            self.spn_figure_title_before.set(str(s.figure.title_before_lines))
+            self.spn_figure_title_after.set(str(s.figure.title_after_lines))
 
         # Advanced
         if hasattr(self, "var_auto_detect"):
@@ -532,13 +650,24 @@ class TvbaMainWindow(tk.Tk):
             progress_cb=progress_cb,
         )
         if result.success:
-            self.status.config(text=f"完成: {result.output_path}")
+            status_text = f"完成: {result.output_path}"
+            if result.warnings:
+                status_text += f"  ({len(result.warnings)} 条警告)"
+            self.status.config(text=status_text)
             if result.elapsed_ms < 1000:
                 time_str = f"{result.elapsed_ms} 毫秒"
             else:
                 time_str = f"{result.elapsed_ms / 1000:.2f} 秒"
+            # Build completion message with warnings if any
+            msg = f"格式刷新成功！\n耗时: {time_str}"
+            if result.warnings:
+                msg += f"\n\n⚠ 警告 ({len(result.warnings)}):"
+                for w in result.warnings[:5]:
+                    msg += f"\n  • {w}"
+                if len(result.warnings) > 5:
+                    msg += f"\n  ... 还有 {len(result.warnings) - 5} 条警告"
             os.startfile(str(result.output_path))
-            messagebox.showinfo("完成", f"格式刷新成功！\n耗时: {time_str}")
+            messagebox.showinfo("完成", msg)
         else:
             self.status.config(text=f"错误: {result.message}")
             messagebox.showerror("错误", result.message)
@@ -629,6 +758,8 @@ class TvbaMainWindow(tk.Tk):
             fval = _safe_float(self.spn_body_special)
             if fval is not None:
                 self.controller.update_setting("body.special_indent_chars", fval)
+            if hasattr(self, "var_body_modify"):
+                self.controller.update_setting("body.modify_content", self.var_body_modify.get())
 
         # Sync title settings (all 5 levels)
         for i in range(1, 6):
@@ -665,6 +796,15 @@ class TvbaMainWindow(tk.Tk):
             fval = _safe_float(self.spn_table_title_spacing)
             if fval is not None:
                 self.controller.update_setting("table.title_spacing", fval)
+            val = _safe_get(self.cmb_table_title_align)
+            if val:
+                self.controller.update_setting("table.title_alignment", val)
+            fval = _safe_float(self.spn_table_title_before)
+            if fval is not None:
+                self.controller.update_setting("table.title_before_lines", fval)
+            fval = _safe_float(self.spn_table_title_after)
+            if fval is not None:
+                self.controller.update_setting("table.title_after_lines", fval)
             val = _safe_get(self.cmb_table_body_font)
             if val:
                 self.controller.update_setting("table.body_font", val)
@@ -697,6 +837,15 @@ class TvbaMainWindow(tk.Tk):
             fval = _safe_float(self.spn_figure_title_spacing)
             if fval is not None:
                 self.controller.update_setting("figure.title_spacing", fval)
+            val = _safe_get(self.cmb_figure_title_align)
+            if val:
+                self.controller.update_setting("figure.title_alignment", val)
+            fval = _safe_float(self.spn_figure_title_before)
+            if fval is not None:
+                self.controller.update_setting("figure.title_before_lines", fval)
+            fval = _safe_float(self.spn_figure_title_after)
+            if fval is not None:
+                self.controller.update_setting("figure.title_after_lines", fval)
 
         # Sync advanced settings
         if hasattr(self, "var_auto_detect"):

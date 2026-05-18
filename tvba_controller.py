@@ -2,14 +2,18 @@
 
 Completely independent of Tkinter. Testable with mock applier.
 """
+import json
 import time
 import traceback
-from dataclasses import dataclass, replace
+from dataclasses import asdict, dataclass, field, replace
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, Protocol
 
 from tvba_persistence import SettingsRepository
 from tvba_settings import FormatSettings, BodySettings, TitleLevelSettings
+
+PRESETS_DIR = Path(__file__).parent / "presets"
 
 
 @dataclass
@@ -24,6 +28,7 @@ class ApplyResult:
     message: str = ""
     output_path: Path | None = None
     elapsed_ms: int = 0
+    warnings: list[str] = field(default_factory=list)
 
 
 class DocumentApplier(Protocol):
@@ -34,8 +39,9 @@ class DocumentApplier(Protocol):
         *,
         output_path: Path | None = None,
         progress_cb: Callable | None = None,
-    ) -> Path:
+    ) -> tuple[Path, object] | Path:
         ...
+
 
 
 class TvbaController:
@@ -124,13 +130,20 @@ class TvbaController:
         if self._opened_file is None:
             return ApplyResult(success=False, message="No file opened")
 
-        stem = self._opened_file.stem
-        suffix = self._opened_file.suffix
-        output_path = self._opened_file.parent / f"{stem}+格式修改后{suffix}"
+        output_path = self._make_output_path()
+
+        # Check if output file is in use (locked by Word or another process)
+        if output_path.exists():
+            if not _can_write_file(output_path):
+                return ApplyResult(
+                    success=False,
+                    message=f"无法写入输出文件:\n{output_path}\n\n"
+                            f"文件可能正在被 Word 或其他程序占用。\n请关闭该文件后重试。"
+                )
 
         start = time.perf_counter()
         try:
-            out = self._applier(
+            result = self._applier(
                 self._opened_file,
                 self._settings,
                 output_path=output_path,
@@ -139,7 +152,21 @@ class TvbaController:
             elapsed_ms = int((time.perf_counter() - start) * 1000)
             if save_settings and self._settings.remember_settings:
                 self._repo.save(self._settings)
-            return ApplyResult(success=True, output_path=out, elapsed_ms=elapsed_ms)
+            # Handle new (path, warnings) tuple or legacy path-only return
+            if isinstance(result, tuple):
+                out, warnings_obj = result
+                warning_msgs = warnings_obj.messages if hasattr(warnings_obj, 'messages') else []
+                return ApplyResult(success=True, output_path=out, elapsed_ms=elapsed_ms, warnings=warning_msgs)
+            else:
+                return ApplyResult(success=True, output_path=result, elapsed_ms=elapsed_ms)
+        except PermissionError:
+            elapsed_ms = int((time.perf_counter() - start) * 1000)
+            return ApplyResult(
+                success=False,
+                message=f"无法写入输出文件:\n{output_path}\n\n"
+                        f"文件可能正在被 Word 或其他程序占用。\n请关闭该文件后重试。",
+                elapsed_ms=elapsed_ms,
+            )
         except Exception as e:
             elapsed_ms = int((time.perf_counter() - start) * 1000)
             tb = traceback.format_exc()
@@ -156,6 +183,62 @@ class TvbaController:
         if saved != FormatSettings():
             self._settings = saved
 
-    def load_preset(self, name: str) -> None:
-        # TODO: Implement preset loading from JSON files
-        pass
+    def load_preset(self, name: str) -> bool:
+        """Load settings from a named preset JSON file. Returns True on success."""
+        if not PRESETS_DIR.exists():
+            return False
+        preset_path = PRESETS_DIR / f"{name}.json"
+        if not preset_path.exists():
+            return False
+        try:
+            with open(preset_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            from tvba_templates import _settings_from_dict
+            self._settings = _settings_from_dict(data)
+            return True
+        except (json.JSONDecodeError, OSError, KeyError):
+            return False
+
+    def save_preset(self, name: str) -> bool:
+        """Save current settings as a named preset JSON file. Returns True on success."""
+        PRESETS_DIR.mkdir(parents=True, exist_ok=True)
+        preset_path = PRESETS_DIR / f"{name}.json"
+        try:
+            data = asdict(self._settings)
+            with open(preset_path, "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
+            return True
+        except OSError:
+            return False
+
+    @staticmethod
+    def list_presets() -> list[str]:
+        """List available preset names."""
+        if not PRESETS_DIR.exists():
+            return []
+        return sorted(f.stem for f in PRESETS_DIR.glob("*.json"))
+
+    def _make_output_path(self) -> Path:
+        """Generate a safe output path with timestamp collision avoidance.
+
+        Always uses .docx suffix regardless of input format, since ensure_docx()
+        converts .doc to OOXML format before processing.
+        """
+        stem = self._opened_file.stem
+        suffix = ".docx"
+        parent = self._opened_file.parent
+        candidate = parent / f"{stem}+格式修改后{suffix}"
+        if candidate.exists():
+            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+            candidate = parent / f"{stem}+格式修改后_{ts}{suffix}"
+        return candidate
+
+
+def _can_write_file(path: Path) -> bool:
+    """Check if a file can be written to (not locked by another process)."""
+    try:
+        with open(path, "a"):
+            pass
+        return True
+    except (PermissionError, OSError):
+        return False

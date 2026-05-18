@@ -79,6 +79,12 @@ class TestAppendixSettings:
             a.title_font = "黑体"
 
 
+class TestFigureSettings:
+    def test_defaults(self):
+        f = FigureSettings()
+        assert f.title_bold is False
+
+
 class TestHeaderSettings:
     def test_defaults(self):
         from tvba_settings import HeaderSettings

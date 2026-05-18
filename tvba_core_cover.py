@@ -6,7 +6,7 @@ Only targets short centered paragraphs that look like a document title
 (not headings, TOC entries, or body text).
 """
 import re
-from tvba_core_oox import format_all_runs_in_paragraph, get_effective_outline_level
+from tvba_core_oox import apply_paragraph_spacing, format_all_runs_in_paragraph, get_effective_outline_level
 from tvba_core_toc import is_toc_title_line, is_toc_entry_line
 from tvba_settings import CoverSettings
 from tvba_utils import size_label_to_points
@@ -58,14 +58,8 @@ def format_cover_title(doc, settings: "CoverSettings | None" = None, *, _paragra
         )
         para.alignment = alignment_val
 
-        from lxml import etree
-        W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
-        pPr = para._element.find(f".//{{{W}}}pPr")
-        if pPr is None:
-            pPr = etree.SubElement(para._element, f"{{{W}}}pPr")
-        spacing = pPr.find(f"{{{W}}}spacing")
-        if spacing is None:
-            spacing = etree.SubElement(pPr, f"{{{W}}}spacing")
-        spacing.set(f"{{{W}}}line", str(int(settings.line_spacing * 240)))
-        spacing.set(f"{{{W}}}lineRule", "auto")
+        apply_paragraph_spacing(
+            para.paragraph_format,
+            line_spacing=settings.line_spacing,
+        )
         break

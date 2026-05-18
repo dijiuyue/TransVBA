@@ -1,7 +1,7 @@
 import pytest
 from docx import Document
 
-from tvba_core_numbering import DocxListResolver, ComListResolver, auto_select
+from tvba_core_numbering import DocxListResolver, ComListResolver, auto_select, ResolverStatus
 
 
 class TestDocxListResolver:
@@ -33,12 +33,103 @@ class TestDocxListResolver:
 
 class TestAutoSelect:
     def test_returns_docx_resolver_when_no_path(self):
-        resolver = auto_select(prefer_com=True, docx_path=None)
+        resolver, status = auto_select(prefer_com=True, docx_path=None)
         assert isinstance(resolver, DocxListResolver)
+        assert isinstance(status, ResolverStatus)
+        assert status.mode == "docx_fallback"
 
     def test_returns_docx_resolver_when_com_disabled(self):
-        resolver = auto_select(prefer_com=False, docx_path="some.docx")
+        resolver, status = auto_select(prefer_com=False, docx_path="some.docx")
         assert isinstance(resolver, DocxListResolver)
+        assert isinstance(status, ResolverStatus)
+        assert status.mode == "docx_fallback"
+
+    def test_status_reports_unreliable_text_for_docx_fallback(self):
+        _, status = auto_select(prefer_com=False, docx_path="dummy.docx")
+        assert status.reliable_rendered_text is False
+
+    def test_com_fallback_produces_warning(self):
+        """When COM is preferred but unavailable, status warns."""
+        _, status = auto_select(prefer_com=True, docx_path="nonexistent.docx")
+        if status.mode == "docx_fallback":
+            assert len(status.warnings) > 0
+        # If COM happened to work on this machine, that's also fine
+
+
+class TestComListResolverPerformanceGuard:
+    def test_init_does_not_prefetch_every_com_paragraph(self, monkeypatch, tmp_path):
+        """Regression guard for GUI freeze at "Detecting titles...".
+
+        ComListResolver used to call Word's Paragraphs(i) once per python-docx
+        paragraph during __init__. On large documents this caused hundreds or
+        thousands of COM round-trips before progress could advance.
+        """
+        import sys
+        import types
+
+        class FakeParagraphs:
+            def __init__(self):
+                self.calls = []
+
+            def __call__(self, index):
+                self.calls.append(index)
+                return f"paragraph-{index}"
+
+        class FakeComDoc:
+            def __init__(self):
+                self.Paragraphs = FakeParagraphs()
+                self.closed = False
+
+            def Close(self, SaveChanges=False):
+                self.closed = True
+
+        class FakeDocuments:
+            def __init__(self, fake_doc):
+                self.fake_doc = fake_doc
+                self.open_calls = []
+
+            def Open(self, path, **kwargs):
+                self.open_calls.append((path, kwargs))
+                return self.fake_doc
+
+        class FakeWord:
+            def __init__(self, fake_doc):
+                self.Visible = True
+                self.DisplayAlerts = None
+                self.Documents = FakeDocuments(fake_doc)
+                self.quit_called = False
+
+            def Quit(self):
+                self.quit_called = True
+
+        fake_com_doc = FakeComDoc()
+        fake_word = FakeWord(fake_com_doc)
+
+        client_mod = types.ModuleType("win32com.client")
+        client_mod.DispatchEx = lambda prog_id: fake_word
+        package_mod = types.ModuleType("win32com")
+        package_mod.client = client_mod
+        monkeypatch.setitem(sys.modules, "win32com", package_mod)
+        monkeypatch.setitem(sys.modules, "win32com.client", client_mod)
+
+        docx_path = tmp_path / "large.docx"
+        doc = Document()
+        for i in range(500):
+            doc.add_paragraph(f"Paragraph {i}")
+        doc.save(str(docx_path))
+
+        resolver = ComListResolver(str(docx_path), doc=doc)
+
+        assert fake_com_doc.Paragraphs.calls == []
+        assert len(resolver._element_to_index) == 500
+
+        first = resolver._get_com_paragraph(doc.paragraphs[0])
+        assert first.startswith("paragraph-")
+        assert len(fake_com_doc.Paragraphs.calls) == 1
+
+        resolver.close()
+        assert fake_com_doc.closed is True
+        assert fake_word.quit_called is True
 
 
 # Check if win32com is available
@@ -81,12 +172,8 @@ def _word_can_dispatch():
 
 _WORD_CAN_DISPATCH = _word_can_dispatch()
 
-# COM tests are skipped by default to avoid Windows fatal exceptions
-# during pytest teardown. COM resolver works when used from GUI.
-_SKIP_COM_TESTS = True
-
-
-@pytest.mark.skipif(not _WORD_CAN_DISPATCH or _SKIP_COM_TESTS, reason="Word COM tests disabled")
+@pytest.mark.word_com
+@pytest.mark.skipif(not _WORD_CAN_DISPATCH, reason="Word not available on this machine")
 class TestComListResolver:
     def test_com_resolver_with_real_word_document(self, tmp_path):
         """Create a docx with a list, open via COM, verify level and text."""
@@ -143,6 +230,7 @@ class TestComListResolver:
         doc.add_paragraph("test")
         doc.save(str(docx_path))
 
-        resolver = auto_select(prefer_com=True, docx_path=str(docx_path), doc=doc)
+        resolver, status = auto_select(prefer_com=True, docx_path=str(docx_path), doc=doc)
         # If COM works, expect ComListResolver; if COM fails to open doc, fallback is OK
         assert isinstance(resolver, (ComListResolver, DocxListResolver))
+        assert isinstance(status, ResolverStatus)

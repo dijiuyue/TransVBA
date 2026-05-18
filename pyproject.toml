@@ -21,3 +21,7 @@ testpaths = ["tests"]
 python_files = ["test_*.py"]
 addopts = "-v --tb=short"
 pythonpath = ["."]
+markers = [
+    "word_com: tests that require Microsoft Word COM automation (requires Word installed)",
+    "slow: slow running tests",
+]

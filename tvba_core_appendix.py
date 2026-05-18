@@ -5,6 +5,7 @@ the active template's appendix settings.
 """
 import re
 from tvba_core_oox import (
+    apply_paragraph_spacing,
     format_all_runs_in_paragraph,
     get_effective_outline_level,
 )
@@ -68,16 +69,10 @@ def _format_appendix_title(para, text: str, settings: AppendixSettings) -> None:
     )
     para.alignment = 0  # left
 
-    from lxml import etree
-    W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
-    pPr = para._element.find(f".//{{{W}}}pPr")
-    if pPr is None:
-        pPr = etree.SubElement(para._element, f"{{{W}}}pPr")
-    spacing = pPr.find(f"{{{W}}}spacing")
-    if spacing is None:
-        spacing = etree.SubElement(pPr, f"{{{W}}}spacing")
-    spacing.set(f"{{{W}}}line", str(int(settings.title_line_spacing * 240)))
-    spacing.set(f"{{{W}}}lineRule", "auto")
+    apply_paragraph_spacing(
+        para.paragraph_format,
+        line_spacing=settings.title_line_spacing,
+    )
 
 
 def _format_appendix_body(para, settings: AppendixSettings) -> None:
@@ -90,13 +85,7 @@ def _format_appendix_body(para, settings: AppendixSettings) -> None:
         bold=settings.body_bold,
     )
 
-    from lxml import etree
-    W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
-    pPr = para._element.find(f".//{{{W}}}pPr")
-    if pPr is None:
-        pPr = etree.SubElement(para._element, f"{{{W}}}pPr")
-    spacing = pPr.find(f"{{{W}}}spacing")
-    if spacing is None:
-        spacing = etree.SubElement(pPr, f"{{{W}}}spacing")
-    spacing.set(f"{{{W}}}line", str(int(settings.body_line_spacing * 240)))
-    spacing.set(f"{{{W}}}lineRule", "auto")
+    apply_paragraph_spacing(
+        para.paragraph_format,
+        line_spacing=settings.body_line_spacing,
+    )

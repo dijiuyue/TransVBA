@@ -10,7 +10,8 @@ from tvba_core_oox import (
     set_run_font_size,
     set_style_font_size,
     apply_indent_chars,
-    set_before_after_lines,
+    apply_indent_cm,
+    apply_paragraph_spacing,
 )
 from tvba_core_normalize import apply_brackets, add_period_if_needed
 from tvba_utils import size_label_to_points, cm_to_points
@@ -46,58 +47,27 @@ def apply_paragraph(para, body) -> None:
     # Alignment
     para.alignment = _ALIGNMENT_MAP.get(body.alignment, 3)
 
-    # Indent
-    apply_indent_chars(
+    # Indent — left/right in cm, special in chars
+    apply_indent_cm(
         para.paragraph_format,
-        left_chars=0.0,
-        right_chars=0.0,
+        left_cm=body.left_indent_cm,
+        right_cm=body.right_indent_cm,
         special_kind=body.special_indent,
         special_chars=body.special_indent_chars,
     )
 
-    # Spacing (before/after in lines)
-    set_before_after_lines(
+    # Spacing (before/after in lines, line spacing)
+    apply_paragraph_spacing(
         para.paragraph_format,
         before_lines=body.before_lines,
         after_lines=body.after_lines,
+        line_spacing=body.spacing,
     )
 
-    # Line spacing
-    pPr = para._element.find(".//w:pPr", {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"})
-    if pPr is not None:
-        from lxml import etree
-        W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
-        spacing = pPr.find(f"{{{W}}}spacing")
-        if spacing is None:
-            spacing = etree.SubElement(pPr, f"{{{W}}}spacing")
-        spacing.set(f"{{{W}}}line", str(int(body.spacing * 240)))
-        spacing.set(f"{{{W}}}lineRule", "auto")
-
-    # Normalize brackets, add period, fix forbidden words
-    text = para.text
-    if text:
-        apply_brackets(para, text)
-        add_period_if_needed(para)
-        # Skip forbidden-word replacement for figure/table captions
-        if not _is_caption_line(text):
-            _replace_forbidden_words(para)
-
-
-_FORBIDDEN_MAP = {"附图": "附件", "附表": "附件"}
-_CAPTION_LINE_RE = __import__('re').compile(r'^(?:[表图]\s*\d+(?:\.\d+)*-\d+\s|附图?\s*\d+(?:\.\d+)*\s)')
-
-
-def _is_caption_line(text: str) -> bool:
-    """Check if text looks like a figure/table caption (should skip forbidden-word replacement)."""
-    return bool(_CAPTION_LINE_RE.match(text.strip()))
-
-
-def _replace_forbidden_words(para) -> None:
-    """Replace forbidden words in paragraph runs."""
-    for run in para.runs:
-        text = run.text
-        if not text:
-            continue
-        for bad, good in _FORBIDDEN_MAP.items():
-            if bad in text:
-                run.text = text.replace(bad, good)
+    # Content modification (brackets, periods) only when explicitly enabled —
+    # formatting should not silently change text.
+    if body.modify_content:
+        text = para.text
+        if text:
+            apply_brackets(para, text)
+            add_period_if_needed(para)

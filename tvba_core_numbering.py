@@ -5,7 +5,8 @@ Corresponds to VBA FormatModule.bas:
   - ReportAllMultiLevelListLevels
 """
 from typing import Protocol, runtime_checkable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from tvba_logging import log_event, log_exception
 
 
 @runtime_checkable
@@ -21,6 +22,14 @@ class ListResolver(Protocol):
     def diagnose(self, doc) -> list:
         """Return diagnostic entries for all list paragraphs."""
         ...
+
+
+@dataclass
+class ResolverStatus:
+    """Describes the resolver's reliability for callers."""
+    mode: str  # "com" | "docx_fallback" | "none"
+    reliable_rendered_text: bool
+    warnings: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -86,35 +95,58 @@ class ComListResolver:
 
     def __init__(self, docx_path: str, doc=None):
         self.docx_path = docx_path
+        log_event("com_resolver.init.start", path=docx_path, paragraphs=len(doc.paragraphs) if doc is not None else None)
         import win32com.client
 
         # Use DispatchEx to create a new, independent Word instance.
         # This avoids conflicts with other Word processes and is more
         # reliable in test environments.
+        log_event("com_resolver.dispatch.start")
         self.word = win32com.client.DispatchEx("Word.Application")
+        log_event("com_resolver.dispatch.done")
         self.word.Visible = False
-        self.doc = self.word.Documents.Open(self.docx_path)
+        try:
+            self.word.DisplayAlerts = 0
+        except Exception:
+            pass
+        log_event("com_resolver.documents_open.start", path=self.docx_path)
+        self.doc = self.word.Documents.Open(
+            self.docx_path,
+            ConfirmConversions=False,
+            ReadOnly=True,
+            AddToRecentFiles=False,
+            Visible=False,
+        )
+        log_event("com_resolver.documents_open.done")
 
-        # Pre-build element-to-COM-paragraph mapping to avoid O(n²)
-        # index lookups during title detection.
-        self._element_to_com = {}
+        # Cache element-to-index only. Caching self.doc.Paragraphs(i) for every
+        # paragraph performs one COM round-trip per paragraph and can freeze the
+        # GUI on large documents while the progress stays at "Detecting titles".
+        self._element_to_index = {}
         if doc is not None:
             for i, para in enumerate(doc.paragraphs):
-                self._element_to_com[id(para._element)] = self.doc.Paragraphs(i + 1)
+                self._element_to_index[id(para._element)] = i + 1
+        log_event("com_resolver.init.done", indexed=len(self._element_to_index))
 
     def close(self):
         """Explicitly close Word COM document and quit the application."""
         try:
             if getattr(self, "doc", None):
+                log_event("com_resolver.close.doc.start")
                 self.doc.Close(SaveChanges=False)
                 self.doc = None
+                log_event("com_resolver.close.doc.done")
         except Exception:
+            log_exception("com_resolver.close.doc.failed")
             pass
         try:
             if getattr(self, "word", None):
+                log_event("com_resolver.close.word.start")
                 self.word.Quit()
                 self.word = None
+                log_event("com_resolver.close.word.done")
         except Exception:
+            log_exception("com_resolver.close.word.failed")
             pass
 
     def __enter__(self):
@@ -135,10 +167,10 @@ class ComListResolver:
 
     def _get_com_paragraph(self, para):
         """Map a python-docx paragraph to the corresponding Word COM paragraph by index."""
-        # Fast path: pre-built mapping
-        cached = self._element_to_com.get(id(para._element))
-        if cached is not None:
-            return cached
+        # Fast path: pre-built index mapping.
+        cached_idx = self._element_to_index.get(id(para._element))
+        if cached_idx is not None:
+            return self.doc.Paragraphs(cached_idx)
 
         # Fallback: compute index dynamically
         parent = para._element.getparent()
@@ -191,15 +223,40 @@ class ComListResolver:
         return entries
 
 
-def auto_select(prefer_com: bool = False, docx_path: str | None = None, doc=None) -> ListResolver:
+def auto_select(prefer_com: bool = False, docx_path: str | None = None, doc=None) -> tuple[ListResolver, ResolverStatus]:
     """Auto-select best available list resolver.
 
-    If prefer_com is True and Word is available and docx_path is provided,
-    returns a COM-based resolver. Otherwise returns DocxListResolver.
+    Returns (resolver, status) where status describes the resolver's reliability.
+
+    Strategy:
+    - If prefer_com=True and Word COM is available: returns ComListResolver (reliable).
+    - If prefer_com=True but Word COM fails: returns DocxListResolver with warning.
+    - If prefer_com=False: returns DocxListResolver (limited capability noted).
     """
     if prefer_com and docx_path is not None:
         try:
-            return ComListResolver(docx_path, doc=doc)
-        except Exception:
-            pass
-    return DocxListResolver(doc)
+            resolver = ComListResolver(docx_path, doc=doc)
+            status = ResolverStatus(
+                mode="com",
+                reliable_rendered_text=True,
+                warnings=[],
+            )
+            return resolver, status
+        except Exception as e:
+            log_exception("auto_select.com_failed")
+            resolver = DocxListResolver(doc)
+            status = ResolverStatus(
+                mode="docx_fallback",
+                reliable_rendered_text=False,
+                warnings=[
+                    f"Word COM 不可用，自动编号标题可能无法识别 ({e})",
+                ],
+            )
+            return resolver, status
+    resolver = DocxListResolver(doc)
+    status = ResolverStatus(
+        mode="docx_fallback",
+        reliable_rendered_text=False,
+        warnings=[],
+    )
+    return resolver, status
