@@ -85,6 +85,17 @@ class TestTvbaController:
         ctrl.reset_to_template_defaults()
         assert ctrl.settings.body.font == "宋体"
 
+    def test_switch_template_updates_reset_defaults(self):
+        repo = SettingsRepository()
+        applier = FakeDocumentApplier()
+        ctrl = TvbaController(repo, applier)
+
+        ctrl.switch_template("general_spec")
+        ctrl.update_setting("titles.3.left_indent_chars", 0.0)
+        ctrl.reset_to_template_defaults()
+
+        assert ctrl.settings.titles[3].left_indent_chars == 2.0
+
     def test_update_setting_table(self):
         repo = SettingsRepository()
         applier = FakeDocumentApplier()

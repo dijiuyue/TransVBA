@@ -31,9 +31,6 @@ class TvbaMainWindow(tk.Tk):
         self.btn_open = ttk.Button(top_frame, text="打开文件...", command=self._on_open)
         self.btn_open.pack(side=tk.LEFT, padx=5)
 
-        self.lbl_file = ttk.Label(top_frame, text="(未选择文件)")
-        self.lbl_file.pack(side=tk.LEFT, padx=5)
-
         # Template selector
         from tvba_templates import TemplateManager
         templates = TemplateManager.list_templates()
@@ -46,6 +43,9 @@ class TvbaMainWindow(tk.Tk):
             self.cmb_template.current(0)
         self.cmb_template.pack(side=tk.LEFT, padx=2)
         self.cmb_template.bind("<<ComboboxSelected>>", self._on_template_change)
+
+        self.lbl_file = ttk.Label(top_frame, text="(未选择文件)")
+        self.lbl_file.pack(side=tk.LEFT, padx=15)
 
         # Main paned window
         paned = ttk.PanedWindow(self, orient=tk.HORIZONTAL)

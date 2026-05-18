@@ -40,6 +40,11 @@ class TitleLevelSettings:
     before_lines: float = 0.5
     after_lines: float = 0.5
     line_spacing: float = 1.5
+    left_indent_chars: float = 0.0
+    right_indent_chars: float = 0.0
+    special_indent: str = "无"
+    special_indent_chars: float = 0.0
+    normalize_brackets: bool = False
 
 
 @dataclass(frozen=True)

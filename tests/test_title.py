@@ -135,6 +135,28 @@ class TestApplyTitleStyle:
         assert para.alignment == 1
 
 
+    def test_applies_title_indent_and_normalizes_brackets(self):
+        doc = Document()
+        para = doc.add_paragraph("1.1.1.1 \u56db\u7ea7\u6807\u9898(\u8bd5\u8fd0\u884c)")
+        settings = TitleLevelSettings(
+            alignment="\u5de6\u5bf9\u9f50",
+            left_indent_chars=2.0,
+            special_indent="\u65e0",
+            normalize_brackets=True,
+        )
+        body = BodySettings(modify_content=False)
+
+        apply_title_style(para, 4, settings, body)
+
+        assert "\uff08\u8bd5\u8fd0\u884c\uff09" in para.text
+        pPr = para._element.find(".//w:pPr", {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"})
+        ind = pPr.find("w:ind", {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"})
+        assert ind.get("{http://schemas.openxmlformats.org/wordprocessingml/2006/main}leftChars") == "200"
+        assert ind.get("{http://schemas.openxmlformats.org/wordprocessingml/2006/main}left") is None
+        assert ind.get("{http://schemas.openxmlformats.org/wordprocessingml/2006/main}firstLine") is None
+        assert ind.get("{http://schemas.openxmlformats.org/wordprocessingml/2006/main}hanging") is None
+
+
 class TestAutoDetectAndFormat:
     def test_detects_and_formats_titles(self):
         doc = Document()

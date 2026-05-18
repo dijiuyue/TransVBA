@@ -19,6 +19,7 @@ from tvba_core_oox import (
     set_run_font_size,
     set_outline_level,
     get_effective_outline_level,
+    apply_indent_chars,
     apply_paragraph_spacing,
     set_snap_to_grid,
     set_auto_space_de,
@@ -313,6 +314,13 @@ def apply_title_style(paragraph, level: int, level_settings, body_settings) -> N
         after_lines=level_settings.after_lines,
         line_spacing=level_settings.line_spacing,
     )
+    apply_indent_chars(
+        paragraph.paragraph_format,
+        left_chars=level_settings.left_indent_chars,
+        right_chars=level_settings.right_indent_chars,
+        special_kind=level_settings.special_indent,
+        special_chars=level_settings.special_indent_chars,
+    )
 
     # Grid alignment for level 1 titles (大鹏模板要求)
     if level == 1:
@@ -321,7 +329,7 @@ def apply_title_style(paragraph, level: int, level_settings, body_settings) -> N
 
     # Normalize brackets and sync number font (no period for titles).
     # Content modifications run only when body settings explicitly allow.
-    if body_settings.modify_content:
+    if body_settings.modify_content or level_settings.normalize_brackets:
         apply_brackets(paragraph, paragraph.text)
     sync_number_font_with_body(paragraph)
 

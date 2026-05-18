@@ -219,11 +219,23 @@ class TestApplyTableBody:
     def test_sets_borders(self):
         doc = Document()
         table = doc.add_table(rows=2, cols=2)
-        settings = TableSettings(line_width_pt=1.0, auto_fit_mode="window")
+        settings = TableSettings(line_width_pt=0.25, auto_fit_mode="window")
         apply_table_body(table, settings)
         tblPr = table._element.find(".//w:tblPr", {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"})
         borders = tblPr.find("w:tblBorders", {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"})
         assert borders is not None
+        assert borders.find("w:top", W_NS).get(f"{{{W}}}sz") == "2"
+
+    def test_applies_configured_row_height(self):
+        doc = Document()
+        table = doc.add_table(rows=1, cols=2)
+        settings = TableSettings(row_height_cm=0.6)
+
+        apply_table_body(table, settings)
+
+        tr_height = table.rows[0]._tr.find(".//w:trHeight", W_NS)
+        assert tr_height.get(W_VAL) == "340"
+        assert tr_height.get(f"{{{W}}}hRule") == "atLeast"
 
 class TestRefreshAll:
     def test_finds_and_formats_table(self):

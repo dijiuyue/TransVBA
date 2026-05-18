@@ -20,6 +20,11 @@ class TestTitleLevelSettings:
         assert t.before_lines == 0.5
         assert t.after_lines == 0.5
         assert t.line_spacing == 1.5
+        assert t.left_indent_chars == 0.0
+        assert t.right_indent_chars == 0.0
+        assert t.special_indent == "无"
+        assert t.special_indent_chars == 0.0
+        assert t.normalize_brackets is False
 
     def test_frozen_cannot_mutate(self):
         t = TitleLevelSettings()

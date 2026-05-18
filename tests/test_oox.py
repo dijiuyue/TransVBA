@@ -16,7 +16,9 @@ from tvba_core_oox import (
     set_table_layout_content,
     set_table_borders,
     set_row_height_at_least,
+    sync_numbering_with_titles,
 )
+from tvba_settings import FormatSettings, TitleLevelSettings
 
 NSMAP = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}
 
@@ -60,7 +62,7 @@ class TestSetOutlineLevel:
         assert outline.get("{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val") == "4"
 
 class TestApplyIndentChars:
-    def test_applies_left_indent_in_twips(self):
+    def test_applies_left_indent_in_characters(self):
         doc = Document()
         para = doc.add_paragraph("Text")
         apply_indent_chars(
@@ -73,8 +75,8 @@ class TestApplyIndentChars:
         pPr = para._element.find(".//w:pPr", NSMAP)
         ind = pPr.find("w:ind", NSMAP)
         assert ind is not None
-        # 2 chars * 12 points/char * 20 twips/point = 480 twips
-        assert ind.get("{http://schemas.openxmlformats.org/wordprocessingml/2006/main}left") == "480"
+        assert ind.get("{http://schemas.openxmlformats.org/wordprocessingml/2006/main}leftChars") == "200"
+        assert ind.get("{http://schemas.openxmlformats.org/wordprocessingml/2006/main}left") is None
 
     def test_applies_first_line_indent(self):
         doc = Document()
@@ -88,7 +90,8 @@ class TestApplyIndentChars:
         )
         pPr = para._element.find(".//w:pPr", NSMAP)
         ind = pPr.find("w:ind", NSMAP)
-        assert ind.get("{http://schemas.openxmlformats.org/wordprocessingml/2006/main}firstLine") == "480"
+        assert ind.get("{http://schemas.openxmlformats.org/wordprocessingml/2006/main}firstLineChars") == "200"
+        assert ind.get("{http://schemas.openxmlformats.org/wordprocessingml/2006/main}firstLine") is None
 
     def test_applies_hanging_indent(self):
         doc = Document()
@@ -102,7 +105,8 @@ class TestApplyIndentChars:
         )
         pPr = para._element.find(".//w:pPr", NSMAP)
         ind = pPr.find("w:ind", NSMAP)
-        assert ind.get("{http://schemas.openxmlformats.org/wordprocessingml/2006/main}hanging") == "480"
+        assert ind.get("{http://schemas.openxmlformats.org/wordprocessingml/2006/main}hangingChars") == "200"
+        assert ind.get("{http://schemas.openxmlformats.org/wordprocessingml/2006/main}hanging") is None
 
 class TestApplyParagraphSpacing:
     def test_sets_beforeLines_and_afterLines(self):
@@ -182,8 +186,8 @@ class TestTableBorders:
         for side in ("top", "left", "bottom", "right", "insideH", "insideV"):
             border = borders.find(f"w:{side}", NSMAP)
             assert border is not None, f"Missing {side} border"
-            # 1.5 pt = 30 half-points
-            assert border.get("{http://schemas.openxmlformats.org/wordprocessingml/2006/main}sz") == "30"
+            # 1.5 pt = 12 eighth-points
+            assert border.get("{http://schemas.openxmlformats.org/wordprocessingml/2006/main}sz") == "12"
             assert border.get("{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val") == "single"
 
 class TestRowHeight:
@@ -199,6 +203,43 @@ class TestRowHeight:
         # 0.7 cm = 0.7 * 28.3465 pt * 20 twips/pt = ~397 twips
         assert trHeight.get("{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val") is not None
         assert trHeight.get("{http://schemas.openxmlformats.org/wordprocessingml/2006/main}hRule") == "atLeast"
+
+
+class TestSyncNumberingWithTitles:
+    def test_syncs_level4_numbering_indent(self):
+        doc = Document()
+        W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+        numbering = doc.part.numbering_part._element
+        abstract = etree.SubElement(numbering, f"{{{W}}}abstractNum")
+        abstract.set(f"{{{W}}}abstractNumId", "777")
+        lvl = etree.SubElement(abstract, f"{{{W}}}lvl")
+        lvl.set(f"{{{W}}}ilvl", "3")
+        etree.SubElement(lvl, f"{{{W}}}pPr")
+        num = etree.SubElement(numbering, f"{{{W}}}num")
+        num.set(f"{{{W}}}numId", "777")
+        abstract_ref = etree.SubElement(num, f"{{{W}}}abstractNumId")
+        abstract_ref.set(f"{{{W}}}val", "777")
+
+        para = doc.add_paragraph("1.1.1.1 四级标题")
+        pPr = para._element.get_or_add_pPr()
+        outline = etree.SubElement(pPr, f"{{{W}}}outlineLvl")
+        outline.set(f"{{{W}}}val", "3")
+        num_pr = etree.SubElement(pPr, f"{{{W}}}numPr")
+        ilvl = etree.SubElement(num_pr, f"{{{W}}}ilvl")
+        ilvl.set(f"{{{W}}}val", "3")
+        num_id = etree.SubElement(num_pr, f"{{{W}}}numId")
+        num_id.set(f"{{{W}}}val", "777")
+
+        titles = tuple(
+            TitleLevelSettings(left_indent_chars=2.0) if i == 3 else TitleLevelSettings()
+            for i in range(5)
+        )
+        sync_numbering_with_titles(doc, FormatSettings(titles=titles))
+
+        ind = lvl.find("w:pPr/w:ind", NSMAP)
+        assert ind.get(f"{{{W}}}leftChars") == "200"
+        assert ind.get(f"{{{W}}}rightChars") == "0"
+        assert ind.get(f"{{{W}}}left") is None
 
 
 class TestSetRunFontSize:

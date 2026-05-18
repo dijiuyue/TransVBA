@@ -11,6 +11,7 @@ from tvba_core_oox import (
     set_table_layout,
     set_table_borders,
     set_table_alignment,
+    set_row_height_at_least,
     apply_indent_cm,
     apply_paragraph_spacing,
     set_paragraph_alignment,
@@ -280,6 +281,10 @@ def apply_table_body(table, settings) -> None:
 
     # Borders
     set_table_borders(table, line_width_pt=settings.line_width_pt)
+
+    if settings.row_height_cm > 0:
+        for row in table.rows:
+            set_row_height_at_least(row, settings.row_height_cm)
 
     # Cell font — first row (header) bold, rest normal
     for row_idx, row in enumerate(table.rows):

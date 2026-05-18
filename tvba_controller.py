@@ -68,6 +68,7 @@ class TvbaController:
     def switch_template(self, template_id: str) -> FormatSettings:
         from tvba_templates import TemplateManager
         self._settings = TemplateManager.load_template(template_id)
+        self._template_defaults = self._settings
         return self._settings
 
     def update_setting(self, path: str, value: Any) -> ValidationResult:

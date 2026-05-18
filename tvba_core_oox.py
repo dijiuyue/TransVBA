@@ -320,27 +320,29 @@ def apply_indent_chars(
     if ind is None:
         ind = etree.SubElement(pPr, _ns("ind"))
 
-    twips_per_char = 240  # 12 pt * 20 twips/pt
-
     if left_chars:
-        ind.set(_ns("left"), str(int(left_chars * twips_per_char)))
-    elif _ns("left") in ind.attrib:
-        del ind.attrib[_ns("left")]
+        ind.set(_ns("leftChars"), str(int(left_chars * 100)))
+        ind.attrib.pop(_ns("left"), None)
+    else:
+        ind.set(_ns("leftChars"), "0")
+        ind.attrib.pop(_ns("left"), None)
 
     if right_chars:
-        ind.set(_ns("right"), str(int(right_chars * twips_per_char)))
-    elif _ns("right") in ind.attrib:
-        del ind.attrib[_ns("right")]
+        ind.set(_ns("rightChars"), str(int(right_chars * 100)))
+        ind.attrib.pop(_ns("right"), None)
+    else:
+        ind.set(_ns("rightChars"), "0")
+        ind.attrib.pop(_ns("right"), None)
 
     # Clear existing special indent attrs
-    for attr in (_ns("firstLine"), _ns("hanging")):
+    for attr in (_ns("firstLine"), _ns("hanging"), _ns("firstLineChars"), _ns("hangingChars")):
         if attr in ind.attrib:
             del ind.attrib[attr]
 
     if special_kind == "首行缩进" and special_chars:
-        ind.set(_ns("firstLine"), str(int(special_chars * twips_per_char)))
+        ind.set(_ns("firstLineChars"), str(int(special_chars * 100)))
     elif special_kind == "悬挂缩进" and special_chars:
-        ind.set(_ns("hanging"), str(int(special_chars * twips_per_char)))
+        ind.set(_ns("hangingChars"), str(int(special_chars * 100)))
 
 
 def apply_indent_cm(
@@ -582,6 +584,24 @@ def sync_numbering_with_titles(doc, settings, *, _paragraphs=None) -> None:
                 if b is not None:
                     rPr.remove(b)
 
+            pPr = lvl.find(f"{{{W}}}pPr")
+            if pPr is None:
+                pPr = etree.SubElement(lvl, f"{{{W}}}pPr")
+            ind = pPr.find(f"{{{W}}}ind")
+            if ind is None:
+                ind = etree.SubElement(pPr, f"{{{W}}}ind")
+
+            for attr in ("left", "right", "firstLine", "hanging", "firstLineChars", "hangingChars"):
+                key = f"{{{W}}}{attr}"
+                if key in ind.attrib:
+                    del ind.attrib[key]
+            ind.set(f"{{{W}}}leftChars", str(int(title_settings.left_indent_chars * 100)))
+            ind.set(f"{{{W}}}rightChars", str(int(title_settings.right_indent_chars * 100)))
+            if title_settings.special_indent == "首行缩进" and title_settings.special_indent_chars:
+                ind.set(f"{{{W}}}firstLineChars", str(int(title_settings.special_indent_chars * 100)))
+            elif title_settings.special_indent == "悬挂缩进" and title_settings.special_indent_chars:
+                ind.set(f"{{{W}}}hangingChars", str(int(title_settings.special_indent_chars * 100)))
+
 
 def set_table_layout(table, mode: str) -> None:
     """Set table column layout mode.
@@ -634,7 +654,7 @@ def set_table_borders(table, *, line_width_pt: float) -> None:
     borders = tblPr.find(_ns("tblBorders"))
     if borders is None:
         borders = etree.SubElement(tblPr, _ns("tblBorders"))
-    sz = str(int(line_width_pt * 20))  # half-points (1 pt = 20 half-points)
+    sz = str(max(2, int(round(line_width_pt * 8))))  # table borders use eighths of a point
     for side in ("top", "left", "bottom", "right", "insideH", "insideV"):
         border = borders.find(_ns(side))
         if border is None:
