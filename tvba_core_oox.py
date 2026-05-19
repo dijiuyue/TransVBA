@@ -343,6 +343,39 @@ def apply_indent_chars(
         ind.set(_ns("firstLineChars"), str(int(special_chars * 100)))
     elif special_kind == "悬挂缩进" and special_chars:
         ind.set(_ns("hangingChars"), str(int(special_chars * 100)))
+    else:
+        ind.set(_ns("firstLineChars"), "0")
+        ind.set(_ns("firstLine"), "0")
+
+
+def apply_style_indent_chars(
+    style,
+    *,
+    left_chars: float,
+    right_chars: float,
+    special_kind: str,
+    special_chars: float,
+) -> None:
+    pPr = style.element.find(_ns("pPr"))
+    if pPr is None:
+        pPr = etree.SubElement(style.element, _ns("pPr"))
+    ind = pPr.find(_ns("ind"))
+    if ind is None:
+        ind = etree.SubElement(pPr, _ns("ind"))
+
+    for attr in (_ns("left"), _ns("right"), _ns("firstLine"), _ns("hanging"), _ns("firstLineChars"), _ns("hangingChars")):
+        if attr in ind.attrib:
+            del ind.attrib[attr]
+
+    ind.set(_ns("leftChars"), str(int(left_chars * 100)))
+    ind.set(_ns("rightChars"), str(int(right_chars * 100)))
+    if special_kind == "\u9996\u884c\u7f29\u8fdb" and special_chars:
+        ind.set(_ns("firstLineChars"), str(int(special_chars * 100)))
+    elif special_kind == "\u60ac\u6302\u7f29\u8fdb" and special_chars:
+        ind.set(_ns("hangingChars"), str(int(special_chars * 100)))
+    else:
+        ind.set(_ns("firstLineChars"), "0")
+        ind.set(_ns("firstLine"), "0")
 
 
 def apply_indent_cm(
@@ -381,7 +414,7 @@ def apply_indent_cm(
     else:
         ind.set(_ns("right"), "0")
 
-    for attr in (_ns("firstLine"), _ns("hanging")):
+    for attr in (_ns("firstLine"), _ns("hanging"), _ns("firstLineChars"), _ns("hangingChars")):
         if attr in ind.attrib:
             del ind.attrib[attr]
 
@@ -575,14 +608,14 @@ def sync_numbering_with_titles(doc, settings, *, _paragraphs=None) -> None:
             szCs.set(f"{{{W}}}val", half_points)
 
             # Bold
-            if title_settings.bold:
-                b = rPr.find(f"{{{W}}}b")
+            for tag in ("b", "bCs"):
+                b = rPr.find(f"{{{W}}}{tag}")
                 if b is None:
-                    etree.SubElement(rPr, f"{{{W}}}b")
-            else:
-                b = rPr.find(f"{{{W}}}b")
-                if b is not None:
-                    rPr.remove(b)
+                    b = etree.SubElement(rPr, f"{{{W}}}{tag}")
+                if title_settings.bold:
+                    b.attrib.pop(f"{{{W}}}val", None)
+                else:
+                    b.set(f"{{{W}}}val", "0")
 
             pPr = lvl.find(f"{{{W}}}pPr")
             if pPr is None:
@@ -601,6 +634,9 @@ def sync_numbering_with_titles(doc, settings, *, _paragraphs=None) -> None:
                 ind.set(f"{{{W}}}firstLineChars", str(int(title_settings.special_indent_chars * 100)))
             elif title_settings.special_indent == "悬挂缩进" and title_settings.special_indent_chars:
                 ind.set(f"{{{W}}}hangingChars", str(int(title_settings.special_indent_chars * 100)))
+            else:
+                ind.set(f"{{{W}}}firstLineChars", "0")
+                ind.set(f"{{{W}}}firstLine", "0")
 
 
 def set_table_layout(table, mode: str) -> None:

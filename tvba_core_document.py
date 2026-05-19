@@ -50,7 +50,11 @@ def apply_settings_to_document(
     if progress_cb:
         progress_cb("Loading document...", 0.0)
 
+    original_path = docx_path
+    converted_temp_path: Path | None = None
     docx_path = ensure_docx(docx_path)
+    if original_path.suffix.lower() == ".doc" and docx_path != original_path:
+        converted_temp_path = docx_path
     log_event("apply.ensure_docx.done", path=str(docx_path))
 
     doc = Document(str(docx_path))
@@ -274,6 +278,11 @@ def apply_settings_to_document(
     if progress_cb:
         progress_cb("Done", 1.0)
 
+    if converted_temp_path is not None and out != converted_temp_path:
+        try:
+            converted_temp_path.unlink(missing_ok=True)
+        except OSError:
+            pass
     log_event("apply.done", output_path=str(out), warnings=len(warnings.messages))
     return out, warnings
 

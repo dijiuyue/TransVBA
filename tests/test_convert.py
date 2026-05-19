@@ -33,7 +33,7 @@ class TestEnsureDocx:
         with patch("win32com.client.DispatchEx", return_value=mock_word):
             result = ensure_docx(doc, output_dir=tmp_path)
 
-        mock_word.Documents.Open.assert_called_once_with(str(doc))
+        mock_word.Documents.Open.assert_called_once_with(str(doc), ReadOnly=True, AddToRecentFiles=False)
         mock_doc.SaveAs2.assert_called_once_with(str(expected_out), FileFormat=16)
         mock_doc.Close.assert_called_once_with(SaveChanges=False)
         mock_word.Quit.assert_called_once()
@@ -49,10 +49,9 @@ class TestEnsureDocx:
             with pytest.raises(RuntimeError, match="Failed to convert .doc to .docx"):
                 ensure_docx(doc, output_dir=tmp_path)
 
-    def test_doc_without_output_dir_uses_same_directory(self, tmp_path):
+    def test_doc_without_output_dir_uses_unique_temp_path(self, tmp_path):
         doc = tmp_path / "report.doc"
         doc.write_text("fake")
-        expected_out = tmp_path / "report.docx"
 
         mock_word = MagicMock()
         mock_doc = MagicMock()
@@ -61,7 +60,9 @@ class TestEnsureDocx:
         with patch("win32com.client.DispatchEx", return_value=mock_word):
             result = ensure_docx(doc)
 
-        assert result == expected_out
+        assert result.parent == tmp_path
+        assert result.suffix == ".docx"
+        assert result.name.startswith("report_transvba_")
 
     def test_quit_failure_after_successful_save_still_returns_path(self, tmp_path):
         """Word may auto-quit after doc.Close, causing word.Quit to fail.

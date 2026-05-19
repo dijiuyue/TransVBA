@@ -52,6 +52,7 @@ class TvbaController:
         template = default_settings or FormatSettings()
         self._template_defaults = template
         self._settings = template
+        self._current_template_id = template.template_name
         self._opened_file: Path | None = None
 
     @property
@@ -62,13 +63,26 @@ class TvbaController:
     def opened_file(self) -> Path | None:
         return self._opened_file
 
+    @property
+    def current_template_id(self) -> str:
+        return self._current_template_id
+
+    def is_custom_template(self) -> bool:
+        return self._current_template_id == "__custom__"
+
     def open_file(self, path: Path) -> None:
         self._opened_file = path
 
     def switch_template(self, template_id: str) -> FormatSettings:
         from tvba_templates import TemplateManager
-        self._settings = TemplateManager.load_template(template_id)
-        self._template_defaults = self._settings
+        self._current_template_id = template_id
+        base = TemplateManager.load_template(template_id)
+        self._template_defaults = base
+        self._settings = base
+        # Load saved overrides for this template
+        saved = self._repo.load_for_template(template_id)
+        if saved != FormatSettings() and saved.template_name == template_id:
+            self._settings = saved
         return self._settings
 
     def update_setting(self, path: str, value: Any) -> ValidationResult:
@@ -152,7 +166,8 @@ class TvbaController:
             )
             elapsed_ms = int((time.perf_counter() - start) * 1000)
             if save_settings and self._settings.remember_settings:
-                self._repo.save(self._settings)
+                settings_to_save = replace(self._settings, template_name=self._current_template_id)
+                self._repo.save(settings_to_save)
             # Handle new (path, warnings) tuple or legacy path-only return
             if isinstance(result, tuple):
                 out, warnings_obj = result
@@ -177,12 +192,44 @@ class TvbaController:
         self._settings = self._template_defaults
 
     def clear_saved_settings(self) -> None:
-        self._repo.clear()
+        self._repo.clear(self._current_template_id)
 
     def load_saved_settings(self) -> None:
-        saved = self._repo.load()
-        if saved != FormatSettings():
-            self._settings = saved
+        saved = self._repo.load_for_template(self._current_template_id)
+        if saved != FormatSettings() and saved.template_name == self._current_template_id:
+            self._settings = self._migrate_saved_settings(saved)
+
+    def _migrate_saved_settings(self, saved: FormatSettings) -> FormatSettings:
+        if saved.template_name != "dapeng_internal" or len(saved.titles) != 5:
+            return saved
+
+        saved_bolds = tuple(title.bold for title in saved.titles)
+        legacy_bold_patterns = {
+            (True, True, True, False, False),
+            (True, True, True, True, True),
+        }
+        has_legacy_title_indent = any(
+            title.left_indent_chars != self._template_defaults.titles[i].left_indent_chars
+            or title.right_indent_chars != self._template_defaults.titles[i].right_indent_chars
+            or title.special_indent != self._template_defaults.titles[i].special_indent
+            or title.special_indent_chars != self._template_defaults.titles[i].special_indent_chars
+            for i, title in enumerate(saved.titles)
+        )
+        if saved_bolds not in legacy_bold_patterns and not has_legacy_title_indent:
+            return saved
+
+        titles = tuple(
+            replace(
+                title,
+                bold=self._template_defaults.titles[i].bold if saved_bolds in legacy_bold_patterns else title.bold,
+                left_indent_chars=self._template_defaults.titles[i].left_indent_chars,
+                right_indent_chars=self._template_defaults.titles[i].right_indent_chars,
+                special_indent=self._template_defaults.titles[i].special_indent,
+                special_indent_chars=self._template_defaults.titles[i].special_indent_chars,
+            )
+            for i, title in enumerate(saved.titles)
+        )
+        return replace(saved, titles=titles)
 
     def load_preset(self, name: str) -> bool:
         """Load settings from a named preset JSON file. Returns True on success."""
@@ -218,6 +265,20 @@ class TvbaController:
         if not PRESETS_DIR.exists():
             return []
         return sorted(f.stem for f in PRESETS_DIR.glob("*.json"))
+
+    def get_all_template_ids(self) -> list[str]:
+        """Return all template IDs (file-based + custom) for multi-template validation."""
+        from tvba_templates import TemplateManager
+        return [t["id"] for t in TemplateManager.list_templates()]
+
+    def load_template_for_validation(self, template_id: str) -> FormatSettings:
+        """Load a template for validation, merging saved overrides if any."""
+        from tvba_templates import TemplateManager
+        base = TemplateManager.load_template(template_id)
+        saved = self._repo.load_for_template(template_id)
+        if saved != FormatSettings() and saved.template_name == template_id:
+            return saved
+        return base
 
     def _make_output_path(self) -> Path:
         """Generate a safe output path with timestamp collision avoidance.

@@ -18,6 +18,9 @@ class TestTemplateSpecificDefaults:
         settings = TemplateManager.load_template("dapeng_internal")
         level4 = settings.titles[3]
 
+        assert [title.bold for title in settings.titles] == [True, False, False, False, False]
+        assert all(title.special_indent == "无" for title in settings.titles)
+        assert all(title.special_indent_chars == 0.0 for title in settings.titles)
         assert level4.left_indent_chars == 0.0
         assert level4.normalize_brackets is False
         assert settings.table.row_height_cm == 0.0

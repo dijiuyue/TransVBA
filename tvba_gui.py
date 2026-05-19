@@ -36,6 +36,7 @@ class TvbaMainWindow(tk.Tk):
         templates = TemplateManager.list_templates()
         template_names = [t["name"] for t in templates]
         self._template_ids = [t["id"] for t in templates]
+        self._template_names = {t["id"]: t["name"] for t in templates}
 
         ttk.Label(top_frame, text="模板标准：").pack(side=tk.LEFT, padx=(15, 2))
         self.cmb_template = ttk.Combobox(top_frame, values=template_names, state="readonly", width=22)
@@ -108,9 +109,11 @@ class TvbaMainWindow(tk.Tk):
                        command=self._on_edit_toggle).pack(side=tk.LEFT, padx=5)
 
         self.chk_remember = tk.BooleanVar(value=True)
-        ttk.Checkbutton(bottom_frame, text="记忆本次设置", variable=self.chk_remember).pack(side=tk.LEFT, padx=5)
+        self._remember_cb = ttk.Checkbutton(bottom_frame, text="记忆本次设置", variable=self.chk_remember)
+        self._remember_cb.pack(side=tk.LEFT, padx=5)
 
-        ttk.Button(bottom_frame, text="重置为默认", command=self._on_reset).pack(side=tk.RIGHT, padx=5)
+        self._reset_btn = ttk.Button(bottom_frame, text="重置为默认", command=self._on_reset)
+        self._reset_btn.pack(side=tk.RIGHT, padx=5)
         ttk.Button(bottom_frame, text="取消", command=self._on_cancel).pack(side=tk.RIGHT, padx=5)
         ttk.Button(bottom_frame, text="应用", command=self._on_apply).pack(side=tk.RIGHT, padx=5)
         ttk.Button(bottom_frame, text="应用并关闭", command=self._on_apply_close).pack(side=tk.RIGHT, padx=5)
@@ -126,6 +129,11 @@ class TvbaMainWindow(tk.Tk):
         # Detail panels (lazy-built)
         self._panels = {}
         self._current_panel = None
+
+        # Initialize: hide "记忆本次设置" and "重置为默认" unless "修改模板"
+        if self.controller.current_template_id != "__custom__":
+            self._remember_cb.pack_forget()
+            self._reset_btn.pack_forget()
 
     def _get_or_build_panel(self, key: str):
         if key not in self._panels:
@@ -573,6 +581,23 @@ class TvbaMainWindow(tk.Tk):
             return
         template_id = self._template_ids[idx]
         self.controller.switch_template(template_id)
+        is_custom = self.controller.is_custom_template()
+        # Show "记忆本次设置" and "重置为默认" only for "修改模板"
+        if is_custom:
+            if not self._remember_cb.winfo_ismapped():
+                self._remember_cb.pack(side=tk.LEFT, padx=5)
+            if not self._reset_btn.winfo_ismapped():
+                self._reset_btn.pack(side=tk.RIGHT, padx=5)
+        else:
+            self._remember_cb.pack_forget()
+            self._reset_btn.pack_forget()
+        # Enable editing automatically for 修改模板
+        if is_custom and not self.chk_edit.get():
+            self.chk_edit.set(True)
+            self._on_edit_toggle()
+        elif not is_custom and self.chk_edit.get():
+            self.chk_edit.set(False)
+            self._on_edit_toggle()
         self._populate_from_settings()
         self.status.config(text=f"已切换模板: {self.cmb_template.get()}")
 
@@ -588,33 +613,46 @@ class TvbaMainWindow(tk.Tk):
                 self.status.config(text="错误: 同步设置失败")
                 return
 
-        self.status.config(text="正在检查格式...")
+        self.status.config(text="正在检查格式（3个模板）...")
         self.progress["value"] = 0
         self.update()
 
         from tvba_core_validate import validate_document
-        issues = validate_document(
-            self.controller.opened_file,
-            self.controller.settings,
-            progress_cb=lambda msg, pct: (
-                self.status.config(text=msg),
-                self.progress.config(value=int(pct * 100)),
-                self.update()
-            ) and None
-        )
+        template_ids = self.controller.get_all_template_ids()
+        all_issues = []
+        template_names = []
+        for i, tid in enumerate(template_ids):
+            settings = self.controller.load_template_for_validation(tid)
+            name = self._template_names.get(tid, tid)
+            template_names.append(name)
+            self.status.config(text=f"检查 {name} 模板...")
+            self.progress["value"] = int((i / len(template_ids)) * 100)
+            self.update()
+            issues = validate_document(
+                self.controller.opened_file,
+                settings,
+                progress_cb=None
+            )
+            if issues:
+                for issue in issues:
+                    all_issues.append((name, issue))
 
-        if not issues:
-            self.status.config(text="格式检查通过")
-            messagebox.showinfo("格式检查", "未发现问题，格式检查通过！")
+        if not all_issues:
+            self.status.config(text="格式检查通过（所有模板）")
+            messagebox.showinfo("格式检查", "未发现问题，所有模板格式检查通过！")
         else:
-            self.status.config(text=f"发现 {len(issues)} 个问题")
-            lines = [f"共发现 {len(issues)} 个格式问题：", ""]
-            for issue in issues[:50]:
-                lines.append(f"[{issue.severity}] {issue.description}")
+            self.status.config(text=f"发现 {len(all_issues)} 个问题")
+            lines = [f"共发现 {len(all_issues)} 个格式问题（跨 {len(template_ids)} 个模板）：", ""]
+            current_tpl = None
+            for tpl_name, issue in all_issues[:80]:
+                if tpl_name != current_tpl:
+                    current_tpl = tpl_name
+                    lines.append(f"【{tpl_name}】")
+                lines.append(f"  [{issue.severity}] {issue.description}")
                 if issue.location:
-                    lines.append(f"  位置: {issue.location}")
-            if len(issues) > 50:
-                lines.append(f"  ... 还有 {len(issues) - 50} 个问题")
+                    lines.append(f"    位置: {issue.location}")
+            if len(all_issues) > 80:
+                lines.append(f"  ... 还有 {len(all_issues) - 80} 个问题")
             messagebox.showwarning("格式检查结果", "\n".join(lines))
 
     def _on_open(self):
@@ -699,9 +737,9 @@ class TvbaMainWindow(tk.Tk):
     def _on_edit_toggle(self):
         enabled = self.chk_edit.get()
         state = "normal" if enabled else "disabled"
-        if enabled:
+        if enabled and self.controller.is_custom_template():
             self.controller.load_saved_settings()
-        else:
+        elif not enabled and not self.controller.is_custom_template():
             self.controller.reset_to_template_defaults()
         self._populate_from_settings()
         # Enable/disable all input widgets in all panels

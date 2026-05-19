@@ -5,7 +5,8 @@ from docx import Document
 
 from tvba_controller import TvbaController, ValidationResult, ApplyResult
 from tvba_persistence import SettingsRepository
-from tvba_settings import FormatSettings, BodySettings
+from tvba_settings import FormatSettings, BodySettings, TitleLevelSettings
+from tvba_templates import TemplateManager
 
 
 class FakeDocumentApplier:
@@ -85,16 +86,92 @@ class TestTvbaController:
         ctrl.reset_to_template_defaults()
         assert ctrl.settings.body.font == "宋体"
 
+    def test_load_saved_settings_ignores_other_template(self):
+        with tempfile.TemporaryDirectory() as td:
+            repo = SettingsRepository(Path(td) / "settings.json")
+            repo.save(FormatSettings(template_name="general_spec"))
+            applier = FakeDocumentApplier()
+            dapeng = TemplateManager.load_template("dapeng_internal")
+            ctrl = TvbaController(repo, applier, dapeng)
+
+            ctrl.load_saved_settings()
+
+            assert ctrl.settings.template_name == "dapeng_internal"
+            assert [title.bold for title in ctrl.settings.titles] == [True, False, False, False, False]
+
+    def test_load_saved_settings_migrates_legacy_dapeng_title_bold(self):
+        with tempfile.TemporaryDirectory() as td:
+            repo = SettingsRepository(Path(td) / "settings.json")
+            legacy_titles = tuple(
+                TitleLevelSettings(bold=bold)
+                for bold in (True, True, True, False, False)
+            )
+            repo.save(FormatSettings(template_name="dapeng_internal", titles=legacy_titles))
+            applier = FakeDocumentApplier()
+            dapeng = TemplateManager.load_template("dapeng_internal")
+            ctrl = TvbaController(repo, applier, dapeng)
+
+            ctrl.load_saved_settings()
+
+            assert [title.bold for title in ctrl.settings.titles] == [True, False, False, False, False]
+
+    def test_load_saved_settings_migrates_legacy_dapeng_title_indent(self):
+        with tempfile.TemporaryDirectory() as td:
+            repo = SettingsRepository(Path(td) / "settings.json")
+            legacy_titles = tuple(
+                TitleLevelSettings(special_indent="首行缩进", special_indent_chars=2.0)
+                for _ in range(5)
+            )
+            repo.save(FormatSettings(template_name="dapeng_internal", titles=legacy_titles))
+            applier = FakeDocumentApplier()
+            dapeng = TemplateManager.load_template("dapeng_internal")
+            ctrl = TvbaController(repo, applier, dapeng)
+
+            ctrl.load_saved_settings()
+
+            assert all(title.special_indent == "无" for title in ctrl.settings.titles)
+            assert all(title.special_indent_chars == 0.0 for title in ctrl.settings.titles)
+
     def test_switch_template_updates_reset_defaults(self):
-        repo = SettingsRepository()
-        applier = FakeDocumentApplier()
-        ctrl = TvbaController(repo, applier)
+        with tempfile.TemporaryDirectory() as td:
+            repo = SettingsRepository(Path(td) / "settings.json")
+            applier = FakeDocumentApplier()
+            ctrl = TvbaController(repo, applier)
 
-        ctrl.switch_template("general_spec")
-        ctrl.update_setting("titles.3.left_indent_chars", 0.0)
-        ctrl.reset_to_template_defaults()
+            ctrl.switch_template("general_spec")
+            ctrl.update_setting("titles.3.left_indent_chars", 0.0)
+            ctrl.reset_to_template_defaults()
 
-        assert ctrl.settings.titles[3].left_indent_chars == 2.0
+            assert ctrl.settings.titles[3].left_indent_chars == 2.0
+
+    def test_switch_template_loads_only_that_template_saved_settings(self):
+        with tempfile.TemporaryDirectory() as td:
+            repo = SettingsRepository(Path(td) / "settings.json")
+            repo.save(FormatSettings(template_name="general_spec", body=BodySettings(font="黑体")))
+            repo.save(FormatSettings(template_name="dapeng_internal", body=BodySettings(font="楷体")))
+            applier = FakeDocumentApplier()
+            ctrl = TvbaController(repo, applier)
+
+            ctrl.switch_template("general_spec")
+            assert ctrl.settings.body.font == "黑体"
+
+            ctrl.switch_template("dapeng_internal")
+            assert ctrl.settings.body.font == "楷体"
+
+    def test_reset_clears_only_current_template_saved_settings(self):
+        with tempfile.TemporaryDirectory() as td:
+            repo = SettingsRepository(Path(td) / "settings.json")
+            repo.save(FormatSettings(template_name="general_spec", body=BodySettings(font="黑体")))
+            repo.save(FormatSettings(template_name="dapeng_internal", body=BodySettings(font="楷体")))
+            applier = FakeDocumentApplier()
+            ctrl = TvbaController(repo, applier)
+
+            ctrl.switch_template("dapeng_internal")
+            ctrl.reset_to_template_defaults()
+            ctrl.clear_saved_settings()
+
+            assert repo.load_for_template("dapeng_internal") == FormatSettings()
+            assert repo.load_for_template("general_spec").body.font == "黑体"
 
     def test_update_setting_table(self):
         repo = SettingsRepository()

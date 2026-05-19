@@ -27,6 +27,40 @@ class TestSettingsRepository:
             assert loaded.auto_detect_numeric_titles == original.auto_detect_numeric_titles
             assert len(loaded.titles) == 5
 
+    def test_saves_settings_per_template(self):
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "config.json"
+            repo = SettingsRepository(path)
+            repo.save(FormatSettings(template_name="general_spec", body=BodySettings(font="黑体")))
+            repo.save(FormatSettings(template_name="dapeng_internal", body=BodySettings(font="楷体")))
+
+            assert repo.load_for_template("general_spec").body.font == "黑体"
+            assert repo.load_for_template("dapeng_internal").body.font == "楷体"
+
+    def test_clear_one_template_keeps_others(self):
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "config.json"
+            repo = SettingsRepository(path)
+            repo.save(FormatSettings(template_name="general_spec", body=BodySettings(font="黑体")))
+            repo.save(FormatSettings(template_name="dapeng_internal", body=BodySettings(font="楷体")))
+
+            repo.clear("dapeng_internal")
+
+            assert repo.load_for_template("dapeng_internal") == FormatSettings()
+            assert repo.load_for_template("general_spec").body.font == "黑体"
+
+    def test_legacy_single_template_file_loads_matching_template(self):
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "config.json"
+            path.write_text(
+                json.dumps({"template_name": "dapeng_internal", "body": {"font": "楷体"}}),
+                encoding="utf-8",
+            )
+            repo = SettingsRepository(path)
+
+            assert repo.load_for_template("dapeng_internal").body.font == "楷体"
+            assert repo.load_for_template("general_spec") == FormatSettings()
+
     def test_load_corrupt_returns_defaults(self):
         with tempfile.TemporaryDirectory() as td:
             path = Path(td) / "config.json"

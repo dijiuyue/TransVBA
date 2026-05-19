@@ -1,5 +1,6 @@
 import pytest
 from docx import Document
+from docx.oxml import OxmlElement
 
 from tvba_core_title import (
     identify_numeric_title_level,
@@ -153,8 +154,28 @@ class TestApplyTitleStyle:
         ind = pPr.find("w:ind", {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"})
         assert ind.get("{http://schemas.openxmlformats.org/wordprocessingml/2006/main}leftChars") == "200"
         assert ind.get("{http://schemas.openxmlformats.org/wordprocessingml/2006/main}left") is None
-        assert ind.get("{http://schemas.openxmlformats.org/wordprocessingml/2006/main}firstLine") is None
+        assert ind.get("{http://schemas.openxmlformats.org/wordprocessingml/2006/main}firstLine") == "0"
         assert ind.get("{http://schemas.openxmlformats.org/wordprocessingml/2006/main}hanging") is None
+
+    def test_no_special_indent_overrides_inherited_first_line(self):
+        doc = Document()
+        para = doc.add_paragraph("1.1 前言")
+        W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+        pPr = para._element.get_or_add_pPr()
+        ind = pPr.find(f"{{{W}}}ind")
+        if ind is None:
+            ind = OxmlElement("w:ind")
+            pPr.append(ind)
+        ind.set(f"{{{W}}}firstLine", "198")
+
+        settings = TitleLevelSettings(special_indent="无", special_indent_chars=0.0)
+        apply_title_style(para, 2, settings, BodySettings())
+
+        ind = para._element.find(".//w:ind", {"w": W})
+        assert ind.get(f"{{{W}}}firstLine") == "0"
+        assert ind.get(f"{{{W}}}firstLineChars") == "0"
+        assert ind.get(f"{{{W}}}hanging") is None
+        assert ind.get(f"{{{W}}}hangingChars") is None
 
 
 class TestAutoDetectAndFormat:

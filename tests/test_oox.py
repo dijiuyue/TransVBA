@@ -11,6 +11,7 @@ from tvba_core_oox import (
     set_style_font_size,
     set_outline_level,
     apply_indent_chars,
+    apply_indent_cm,
     apply_paragraph_spacing,
     set_table_layout_window,
     set_table_layout_content,
@@ -107,6 +108,28 @@ class TestApplyIndentChars:
         ind = pPr.find("w:ind", NSMAP)
         assert ind.get("{http://schemas.openxmlformats.org/wordprocessingml/2006/main}hangingChars") == "200"
         assert ind.get("{http://schemas.openxmlformats.org/wordprocessingml/2006/main}hanging") is None
+
+    def test_apply_indent_cm_clears_character_special_indent(self):
+        doc = Document()
+        para = doc.add_paragraph("Text")
+        W_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+        pPr = para._element.get_or_add_pPr()
+        ind = etree.SubElement(pPr, f"{{{W_NS}}}ind")
+        ind.set(f"{{{W_NS}}}firstLineChars", "200")
+        ind.set(f"{{{W_NS}}}hangingChars", "100")
+
+        apply_indent_cm(
+            para.paragraph_format,
+            left_cm=0.0,
+            right_cm=0.0,
+            special_kind="无",
+            special_chars=0.0,
+        )
+
+        assert ind.get(f"{{{W_NS}}}firstLineChars") is None
+        assert ind.get(f"{{{W_NS}}}hangingChars") is None
+        assert ind.get(f"{{{W_NS}}}firstLine") is None
+        assert ind.get(f"{{{W_NS}}}hanging") is None
 
 class TestApplyParagraphSpacing:
     def test_sets_beforeLines_and_afterLines(self):
@@ -206,6 +229,43 @@ class TestRowHeight:
 
 
 class TestSyncNumberingWithTitles:
+    def test_syncs_numbering_bold_off_explicitly(self):
+        doc = Document()
+        W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+        numbering = doc.part.numbering_part._element
+        abstract = etree.SubElement(numbering, f"{{{W}}}abstractNum")
+        abstract.set(f"{{{W}}}abstractNumId", "778")
+        lvl = etree.SubElement(abstract, f"{{{W}}}lvl")
+        lvl.set(f"{{{W}}}ilvl", "1")
+        rPr = etree.SubElement(lvl, f"{{{W}}}rPr")
+        etree.SubElement(rPr, f"{{{W}}}b")
+        etree.SubElement(rPr, f"{{{W}}}bCs")
+        num = etree.SubElement(numbering, f"{{{W}}}num")
+        num.set(f"{{{W}}}numId", "778")
+        abstract_ref = etree.SubElement(num, f"{{{W}}}abstractNumId")
+        abstract_ref.set(f"{{{W}}}val", "778")
+
+        para = doc.add_paragraph("1.2 二级标题")
+        pPr = para._element.get_or_add_pPr()
+        outline = etree.SubElement(pPr, f"{{{W}}}outlineLvl")
+        outline.set(f"{{{W}}}val", "1")
+        num_pr = etree.SubElement(pPr, f"{{{W}}}numPr")
+        ilvl = etree.SubElement(num_pr, f"{{{W}}}ilvl")
+        ilvl.set(f"{{{W}}}val", "1")
+        num_id = etree.SubElement(num_pr, f"{{{W}}}numId")
+        num_id.set(f"{{{W}}}val", "778")
+
+        titles = tuple(
+            TitleLevelSettings(bold=False) if i == 1 else TitleLevelSettings()
+            for i in range(5)
+        )
+        sync_numbering_with_titles(doc, FormatSettings(titles=titles))
+
+        for tag in ("b", "bCs"):
+            bold = lvl.find(f"w:rPr/w:{tag}", NSMAP)
+            assert bold is not None
+            assert bold.get(f"{{{W}}}val") == "0"
+
     def test_syncs_level4_numbering_indent(self):
         doc = Document()
         W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"

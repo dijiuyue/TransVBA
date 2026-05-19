@@ -1,8 +1,22 @@
-""".doc to .docx conversion using Word COM.
-
-Corresponds to the implicit "open any Word file" capability in VBA.
-"""
 from pathlib import Path
+import tempfile
+
+
+def _make_conversion_path(doc_path: Path, output_dir: Path, *, unique: bool) -> Path:
+    """Return a unique .docx path for converting a legacy .doc file."""
+    if unique:
+        tmp = tempfile.NamedTemporaryFile(
+            delete=False,
+            suffix=".docx",
+            prefix=f"{doc_path.stem}_transvba_",
+            dir=output_dir,
+        )
+        tmp_path = Path(tmp.name)
+        tmp.close()
+        tmp_path.unlink(missing_ok=True)
+        return tmp_path
+
+    return output_dir / (doc_path.stem + ".docx")
 
 
 def ensure_docx(doc_path: Path, *, output_dir: Path | None = None) -> Path:
@@ -20,8 +34,9 @@ def ensure_docx(doc_path: Path, *, output_dir: Path | None = None) -> Path:
         return doc_path
 
     if doc_path.suffix.lower() == ".doc":
+        use_unique_temp = output_dir is None
         out_dir = output_dir or doc_path.parent
-        out_path = out_dir / (doc_path.stem + ".docx")
+        out_path = _make_conversion_path(doc_path, out_dir, unique=use_unique_temp)
 
         import win32com.client
 
@@ -30,7 +45,7 @@ def ensure_docx(doc_path: Path, *, output_dir: Path | None = None) -> Path:
         try:
             word = win32com.client.DispatchEx("Word.Application")
             word.Visible = False
-            doc = word.Documents.Open(str(doc_path))
+            doc = word.Documents.Open(str(doc_path), ReadOnly=True, AddToRecentFiles=False)
             # wdFormatXMLDocument = 16
             doc.SaveAs2(str(out_path), FileFormat=16)
             return out_path

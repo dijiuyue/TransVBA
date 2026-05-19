@@ -16,26 +16,39 @@ class TemplateManager:
 
     @classmethod
     def list_templates(cls) -> list[dict]:
-        """Scan templates/ dir, return list of {id, name, description}."""
-        if not TEMPLATES_DIR.exists():
-            return []
+        """Scan templates/ dir, return list of {id, name, description}.
+
+        Includes the virtual 'custom' template for free-form editing.
+        """
         templates = []
-        for f in sorted(TEMPLATES_DIR.glob("*.json")):
-            try:
-                with open(f, "r", encoding="utf-8") as fh:
-                    data = json.load(fh)
-                templates.append({
-                    "id": data.get("template_name", f.stem),
-                    "name": data.get("template_display", f.stem),
-                    "description": data.get("template_description", ""),
-                })
-            except (json.JSONDecodeError, OSError):
-                continue
+        if TEMPLATES_DIR.exists():
+            for f in sorted(TEMPLATES_DIR.glob("*.json")):
+                try:
+                    with open(f, "r", encoding="utf-8") as fh:
+                        data = json.load(fh)
+                    templates.append({
+                        "id": data.get("template_name", f.stem),
+                        "name": data.get("template_display", f.stem),
+                        "description": data.get("template_description", ""),
+                    })
+                except (json.JSONDecodeError, OSError):
+                    continue
+        templates.append({
+            "id": "__custom__",
+            "name": "修改模板",
+            "description": "自由修改设置，独立保存，不影响其他模板",
+        })
         return templates
 
     @classmethod
     def load_template(cls, template_id: str) -> FormatSettings:
-        """Load a specific template and return FormatSettings."""
+        """Load a specific template and return FormatSettings.
+
+        For '__custom__', returns a default template that gets overridden
+        by saved settings at the controller level.
+        """
+        if template_id == "__custom__":
+            return FormatSettings(template_name="__custom__")
         file_path = TEMPLATES_DIR / f"{template_id}.json"
         if not file_path.exists():
             raise FileNotFoundError(f"Template not found: {template_id}")

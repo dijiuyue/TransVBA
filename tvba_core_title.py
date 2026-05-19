@@ -20,6 +20,7 @@ from tvba_core_oox import (
     set_outline_level,
     get_effective_outline_level,
     apply_indent_chars,
+    apply_style_indent_chars,
     apply_paragraph_spacing,
     set_snap_to_grid,
     set_auto_space_de,
@@ -316,6 +317,13 @@ def apply_title_style(paragraph, level: int, level_settings, body_settings) -> N
     )
     apply_indent_chars(
         paragraph.paragraph_format,
+        left_chars=level_settings.left_indent_chars,
+        right_chars=level_settings.right_indent_chars,
+        special_kind=level_settings.special_indent,
+        special_chars=level_settings.special_indent_chars,
+    )
+    apply_style_indent_chars(
+        paragraph.style,
         left_chars=level_settings.left_indent_chars,
         right_chars=level_settings.right_indent_chars,
         special_kind=level_settings.special_indent,

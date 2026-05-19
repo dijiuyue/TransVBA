@@ -22,6 +22,7 @@ def main():
     except (FileNotFoundError, Exception):
         default_settings = FormatSettings()
     controller = TvbaController(repo, apply_settings_to_document, default_settings)
+    controller.load_saved_settings()
     app = TvbaMainWindow(controller)
     app.mainloop()
 
