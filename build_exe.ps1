@@ -16,11 +16,16 @@ try {
 
 # Build
 pyinstaller `
+    --noconfirm `
+    --clean `
     --onefile `
     --windowed `
     --name "TransVBA-Pro" `
-    --add-data "tvba_core_*.py;." `
+    --add-data "templates;templates" `
     --hidden-import win32com.client `
+    --hidden-import win32timezone `
+    --hidden-import pythoncom `
+    --hidden-import pywintypes `
     --hidden-import lxml.etree `
     tvba.py
 

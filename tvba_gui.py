@@ -7,6 +7,9 @@ Corresponds to VBA UserForm1.frm:
   - LoadSettingsToForm / SetEditingEnabled
 """
 import os
+import queue
+import threading
+import traceback
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 from pathlib import Path
@@ -19,6 +22,8 @@ class TvbaMainWindow(tk.Tk):
         self.title("TransVBA-Pro — Word 格式自动刷新")
         self.geometry("900x650")
         self.minsize(700, 500)
+        self._validate_running = False
+        self._validate_queue = queue.Queue()
 
         self._build_layout()
         self._populate_from_settings()
@@ -117,7 +122,8 @@ class TvbaMainWindow(tk.Tk):
         ttk.Button(bottom_frame, text="取消", command=self._on_cancel).pack(side=tk.RIGHT, padx=5)
         ttk.Button(bottom_frame, text="应用", command=self._on_apply).pack(side=tk.RIGHT, padx=5)
         ttk.Button(bottom_frame, text="应用并关闭", command=self._on_apply_close).pack(side=tk.RIGHT, padx=5)
-        ttk.Button(bottom_frame, text="格式检查", command=self._on_validate).pack(side=tk.RIGHT, padx=5)
+        self.btn_validate = ttk.Button(bottom_frame, text="格式检查", command=self._on_validate)
+        self.btn_validate.pack(side=tk.RIGHT, padx=5)
 
         # Progress bar
         self.progress = ttk.Progressbar(self, mode="determinate", maximum=100)
@@ -643,6 +649,111 @@ class TvbaMainWindow(tk.Tk):
         else:
             self.status.config(text=f"发现 {len(all_issues)} 个问题")
             lines = [f"共发现 {len(all_issues)} 个格式问题（跨 {len(template_ids)} 个模板）：", ""]
+            current_tpl = None
+            for tpl_name, issue in all_issues[:80]:
+                if tpl_name != current_tpl:
+                    current_tpl = tpl_name
+                    lines.append(f"【{tpl_name}】")
+                lines.append(f"  [{issue.severity}] {issue.description}")
+                if issue.location:
+                    lines.append(f"    位置: {issue.location}")
+            if len(all_issues) > 80:
+                lines.append(f"  ... 还有 {len(all_issues) - 80} 个问题")
+            messagebox.showwarning("格式检查结果", "\n".join(lines))
+
+    def _on_validate(self):
+        if self.controller.opened_file is None:
+            messagebox.showwarning("提示", "请先打开一个 Word 文档")
+            return
+        if self._validate_running:
+            return
+
+        if self.chk_edit.get():
+            try:
+                self._sync_settings_to_controller()
+            except Exception as e:
+                self.status.config(text="错误: 同步设置失败")
+                messagebox.showerror("错误", f"同步设置失败: {e}")
+                return
+
+        docx_path = self.controller.opened_file
+        template_ids = self.controller.get_all_template_ids()
+        validation_jobs = [
+            (
+                self._template_names.get(tid, tid),
+                self.controller.load_template_for_validation(tid),
+            )
+            for tid in template_ids
+        ]
+
+        self._validate_running = True
+        self.btn_validate.config(state="disabled")
+        self.status.config(text=f"正在检查格式（{len(validation_jobs)} 个模板）...")
+        self.progress["value"] = 0
+        threading.Thread(
+            target=self._run_validation_worker,
+            args=(docx_path, validation_jobs),
+            daemon=True,
+        ).start()
+        self.after(100, self._poll_validation_queue)
+
+    def _run_validation_worker(self, docx_path, validation_jobs):
+        try:
+            from tvba_core_validate import validate_document
+            all_issues = []
+            total = max(len(validation_jobs), 1)
+            for i, (name, settings) in enumerate(validation_jobs):
+                base_progress = i / total
+                span = 1 / total
+                self._validate_queue.put(("progress", f"检查 {name} 模板...", base_progress))
+
+                def progress_cb(msg, pct, *, tpl_name=name, base=base_progress, width=span):
+                    self._validate_queue.put(("progress", f"{tpl_name}: {msg}", base + pct * width))
+
+                issues = validate_document(docx_path, settings, progress_cb=progress_cb)
+                for issue in issues:
+                    all_issues.append((name, issue))
+            self._validate_queue.put(("done", all_issues, len(validation_jobs)))
+        except Exception:
+            self._validate_queue.put(("error", traceback.format_exc()))
+
+    def _poll_validation_queue(self):
+        try:
+            while True:
+                item = self._validate_queue.get_nowait()
+                kind = item[0]
+                if kind == "progress":
+                    _, msg, pct = item
+                    self.status.config(text=msg)
+                    self.progress["value"] = max(0, min(100, int(pct * 100)))
+                elif kind == "done":
+                    _, all_issues, template_count = item
+                    self._finish_validation(all_issues, template_count)
+                    return
+                elif kind == "error":
+                    _, tb = item
+                    self._validate_running = False
+                    self.btn_validate.config(state="normal")
+                    self.status.config(text="错误: 格式检查失败")
+                    messagebox.showerror("错误", tb)
+                    return
+        except queue.Empty:
+            pass
+
+        if self._validate_running:
+            self.after(100, self._poll_validation_queue)
+
+    def _finish_validation(self, all_issues, template_count: int):
+        self._validate_running = False
+        self.btn_validate.config(state="normal")
+        self.progress["value"] = 100
+
+        if not all_issues:
+            self.status.config(text="格式检查通过（所有模板）")
+            messagebox.showinfo("格式检查", "未发现问题，所有模板格式检查通过。")
+        else:
+            self.status.config(text=f"发现 {len(all_issues)} 个问题")
+            lines = [f"共发现 {len(all_issues)} 个格式问题（跨 {template_count} 个模板）：", ""]
             current_tpl = None
             for tpl_name, issue in all_issues[:80]:
                 if tpl_name != current_tpl:
