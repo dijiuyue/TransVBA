@@ -115,12 +115,13 @@ def format_all_runs_in_paragraph(para, *, ascii_font: str, eastasia_font: str, s
             szCs = etree.SubElement(rPr, f"{{{W}}}szCs")
         szCs.set(f"{{{W}}}val", half_points)
 
-        # Set bold explicitly.  Removing w:b is not enough when the paragraph
+        # Set bold explicitly. Removing w:b is not enough when the paragraph
         # style or numbering level is bold; w:val="0" overrides inheritance.
+        # Normalize duplicate properties from Word-authored documents.
         for tag in ("b", "bCs"):
-            b = rPr.find(f"{{{W}}}{tag}")
-            if b is None:
-                b = etree.SubElement(rPr, f"{{{W}}}{tag}")
+            for old in list(rPr.findall(f"{{{W}}}{tag}")):
+                rPr.remove(old)
+            b = etree.SubElement(rPr, f"{{{W}}}{tag}")
             if bold:
                 b.attrib.pop(f"{{{W}}}val", None)
             else:
@@ -141,8 +142,7 @@ def clear_paragraph_formatting(para) -> None:
             continue
 
         for tag in ("rFonts", "sz", "szCs", "b", "bCs", "i", "iCs", "u", "color", "highlight", "spacing", "kern"):
-            elem = rPr.find(f"{{{W}}}{tag}")
-            if elem is not None:
+            for elem in list(rPr.findall(f"{{{W}}}{tag}")):
                 rPr.remove(elem)
 
     # Clear paragraph spacing
@@ -512,7 +512,7 @@ def set_paragraph_alignment(para, alignment: str) -> None:
 from tvba_utils import cm_to_points
 
 
-def sync_numbering_with_titles(doc, settings, *, _paragraphs=None) -> None:
+def _sync_numbering_with_titles_legacy(doc, settings, *, _paragraphs=None) -> None:
     """Update numbering definitions so auto-generated list numbers match title formatting.
 
     When paragraphs use Word multilevel lists for headings, the numbers are
@@ -634,6 +634,155 @@ def sync_numbering_with_titles(doc, settings, *, _paragraphs=None) -> None:
                 ind.set(f"{{{W}}}firstLineChars", str(int(title_settings.special_indent_chars * 100)))
             elif title_settings.special_indent == "悬挂缩进" and title_settings.special_indent_chars:
                 ind.set(f"{{{W}}}hangingChars", str(int(title_settings.special_indent_chars * 100)))
+            else:
+                ind.set(f"{{{W}}}firstLineChars", "0")
+                ind.set(f"{{{W}}}firstLine", "0")
+
+
+def sync_numbering_with_titles(doc, settings, *, _paragraphs=None) -> None:
+    """Update list marker formatting for both title and body paragraphs.
+
+    Word-generated list markers such as "1)" live in numbering.xml rather than
+    in paragraph runs. Title markers follow title settings; ordinary list
+    markers follow body settings so they are refreshed with the surrounding text.
+    """
+    from tvba_utils import size_label_to_points
+
+    numbering_part = doc.part.numbering_part
+    if numbering_part is None:
+        return
+
+    W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+    paragraphs = _paragraphs if _paragraphs is not None else doc.paragraphs
+    used_levels = {}
+
+    for para in paragraphs:
+        pPr = para._element.find(f".//{{{W}}}pPr")
+        if pPr is None:
+            continue
+        numPr = pPr.find(f"{{{W}}}numPr")
+        if numPr is None:
+            continue
+        numId_elem = numPr.find(f"{{{W}}}numId")
+        ilvl_elem = numPr.find(f"{{{W}}}ilvl")
+        if numId_elem is None or ilvl_elem is None:
+            continue
+        num_id = numId_elem.get(f"{{{W}}}val")
+        ilvl_str = ilvl_elem.get(f"{{{W}}}val")
+        if num_id is None or ilvl_str is None:
+            continue
+        try:
+            ilvl = int(ilvl_str)
+        except ValueError:
+            continue
+
+        fmt = ("body", None)
+        outline = pPr.find(f"{{{W}}}outlineLvl")
+        if outline is not None:
+            outline_val = outline.get(f"{{{W}}}val")
+            try:
+                outline_level = int(outline_val) if outline_val is not None else None
+            except ValueError:
+                outline_level = None
+            if outline_level is not None and 0 <= outline_level <= 4:
+                fmt = ("title", outline_level)
+
+        key = (num_id, ilvl)
+        if used_levels.get(key, ("body", None))[0] != "title":
+            used_levels[key] = fmt
+
+    if not used_levels:
+        return
+
+    num_id_to_abstract = {}
+    for num in numbering_part._element.findall(f"{{{W}}}num"):
+        num_id = num.get(f"{{{W}}}numId")
+        abstract_id_elem = num.find(f"{{{W}}}abstractNumId")
+        if abstract_id_elem is None:
+            continue
+        abstract_id = abstract_id_elem.get(f"{{{W}}}val")
+        if num_id is not None and abstract_id is not None:
+            num_id_to_abstract[num_id] = abstract_id
+
+    abstract_level_formats = {}
+    for (num_id, ilvl), fmt in used_levels.items():
+        abstract_id = num_id_to_abstract.get(num_id)
+        if abstract_id is not None:
+            abstract_level_formats[(abstract_id, ilvl)] = fmt
+
+    for abstract_num in numbering_part._element.findall(f"{{{W}}}abstractNum"):
+        abstract_id = abstract_num.get(f"{{{W}}}abstractNumId")
+        for lvl in abstract_num.findall(f"{{{W}}}lvl"):
+            ilvl_str = lvl.get(f"{{{W}}}ilvl")
+            if ilvl_str is None:
+                continue
+            try:
+                ilvl = int(ilvl_str)
+            except ValueError:
+                continue
+            fmt = abstract_level_formats.get((abstract_id, ilvl))
+            if fmt is None:
+                continue
+
+            fmt_kind, fmt_level = fmt
+            if fmt_kind == "title" and fmt_level is not None:
+                title_settings = settings.titles[fmt_level]
+                eastasia_font = title_settings.font
+                size_pt = size_label_to_points(title_settings.size)
+                bold = title_settings.bold
+                left_chars = title_settings.left_indent_chars
+                right_chars = title_settings.right_indent_chars
+                special_indent = title_settings.special_indent
+                special_indent_chars = title_settings.special_indent_chars
+            else:
+                eastasia_font = settings.body.font
+                size_pt = size_label_to_points(settings.body.size)
+                bold = False
+                left_chars = 0.0
+                right_chars = 0.0
+                special_indent = "\u65e0"
+                special_indent_chars = 0.0
+
+            half_points = str(int(size_pt * 2))
+            rPr = lvl.find(f"{{{W}}}rPr")
+            if rPr is None:
+                rPr = etree.SubElement(lvl, f"{{{W}}}rPr")
+
+            rFonts = rPr.find(f"{{{W}}}rFonts")
+            if rFonts is None:
+                rFonts = etree.SubElement(rPr, f"{{{W}}}rFonts")
+            rFonts.set(f"{{{W}}}ascii", "Times New Roman")
+            rFonts.set(f"{{{W}}}hAnsi", "Times New Roman")
+            rFonts.set(f"{{{W}}}eastAsia", eastasia_font)
+
+            for tag in ("sz", "szCs"):
+                elem = rPr.find(f"{{{W}}}{tag}")
+                if elem is None:
+                    elem = etree.SubElement(rPr, f"{{{W}}}{tag}")
+                elem.set(f"{{{W}}}val", half_points)
+
+            for tag in ("b", "bCs"):
+                for old in list(rPr.findall(f"{{{W}}}{tag}")):
+                    rPr.remove(old)
+                elem = etree.SubElement(rPr, f"{{{W}}}{tag}")
+                if not bold:
+                    elem.set(f"{{{W}}}val", "0")
+
+            pPr = lvl.find(f"{{{W}}}pPr")
+            if pPr is None:
+                pPr = etree.SubElement(lvl, f"{{{W}}}pPr")
+            ind = pPr.find(f"{{{W}}}ind")
+            if ind is None:
+                ind = etree.SubElement(pPr, f"{{{W}}}ind")
+
+            for attr in ("left", "right", "firstLine", "hanging", "firstLineChars", "hangingChars"):
+                ind.attrib.pop(f"{{{W}}}{attr}", None)
+            ind.set(f"{{{W}}}leftChars", str(int(left_chars * 100)))
+            ind.set(f"{{{W}}}rightChars", str(int(right_chars * 100)))
+            if special_indent == "\u9996\u884c\u7f29\u8fdb" and special_indent_chars:
+                ind.set(f"{{{W}}}firstLineChars", str(int(special_indent_chars * 100)))
+            elif special_indent == "\u60ac\u6302\u7f29\u8fdb" and special_indent_chars:
+                ind.set(f"{{{W}}}hangingChars", str(int(special_indent_chars * 100)))
             else:
                 ind.set(f"{{{W}}}firstLineChars", "0")
                 ind.set(f"{{{W}}}firstLine", "0")

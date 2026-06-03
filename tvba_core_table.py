@@ -18,6 +18,7 @@ from tvba_core_oox import (
     format_all_runs_in_paragraph,
 )
 import re
+from lxml import etree
 
 from tvba_utils import clean_para_text, size_label_to_points, cm_to_points
 
@@ -236,7 +237,56 @@ def _remove_outline_level(para) -> None:
             pPr.remove(outline)
 
 
-def apply_table_caption(para, settings) -> None:
+def _set_bool_property(rPr, tag: str, value: bool) -> None:
+    for old in list(rPr.findall(f"{{{W}}}{tag}")):
+        rPr.remove(old)
+    elem = etree.SubElement(rPr, f"{{{W}}}{tag}")
+    if not value:
+        elem.set(_W_VAL, "0")
+
+
+def _format_numbering_level_for_caption(para, doc, settings) -> None:
+    """Format Word-generated caption labels stored in numbering.xml."""
+    ilvl, num_id = _effective_num_pr(para, doc)
+    lvl = _numbering_level(doc, num_id, ilvl) if num_id is not None else None
+    if lvl is None:
+        return
+
+    rPr = lvl.find(f"{{{W}}}rPr")
+    if rPr is None:
+        rPr = etree.SubElement(lvl, f"{{{W}}}rPr")
+
+    rFonts = rPr.find(f"{{{W}}}rFonts")
+    if rFonts is None:
+        rFonts = etree.SubElement(rPr, f"{{{W}}}rFonts")
+    rFonts.set(f"{{{W}}}ascii", "Times New Roman")
+    rFonts.set(f"{{{W}}}hAnsi", "Times New Roman")
+    rFonts.set(f"{{{W}}}eastAsia", settings.title_font)
+
+    half_points = str(int(size_label_to_points(settings.title_size) * 2))
+    for tag in ("sz", "szCs"):
+        elem = rPr.find(f"{{{W}}}{tag}")
+        if elem is None:
+            elem = etree.SubElement(rPr, f"{{{W}}}{tag}")
+        elem.set(_W_VAL, half_points)
+
+    for tag in ("b", "bCs"):
+        _set_bool_property(rPr, tag, settings.title_bold)
+
+
+def _format_paragraph_mark_for_caption(para, settings) -> None:
+    """Format the paragraph mark so caption fields inherit the desired style."""
+    pPr = para._element.find(f"{{{W}}}pPr")
+    if pPr is None:
+        pPr = etree.SubElement(para._element, f"{{{W}}}pPr")
+    rPr = pPr.find(f"{{{W}}}rPr")
+    if rPr is None:
+        rPr = etree.SubElement(pPr, f"{{{W}}}rPr")
+    for tag in ("b", "bCs"):
+        _set_bool_property(rPr, tag, settings.title_bold)
+
+
+def apply_table_caption(para, settings, doc=None) -> None:
     """Apply formatting to a table caption paragraph."""
     # Normalize space between number and caption text: "表 1-1  测试" → "表 1-1 测试"
     _normalize_caption_space(para)
@@ -247,6 +297,8 @@ def apply_table_caption(para, settings) -> None:
         size_pt=size_label_to_points(settings.title_size),
         bold=settings.title_bold,
     )
+    _format_paragraph_mark_for_caption(para, settings)
+    _format_numbering_level_for_caption(para, doc, settings)
 
     # Remove any outline level — captions are not headings
     _remove_outline_level(para)
@@ -303,6 +355,14 @@ def apply_table_body(table, settings) -> None:
                     para.paragraph_format,
                     line_spacing=row_spacing,
                 )
+                apply_indent_cm(
+                    para.paragraph_format,
+                    left_cm=0.0,
+                    right_cm=0.0,
+                    special_kind="无",
+                    special_chars=0.0,
+                    special_cm=0.0,
+                )
 
 
 def _normalize_caption_space(para) -> None:
@@ -332,7 +392,7 @@ def refresh_all(doc, settings, *, _paragraphs=None, _tables=None) -> list[str]:
     for table in tables:
         caption = find_table_caption(table, doc, _tables=tables, _paragraphs=_paragraphs)
         if caption is not None:
-            apply_table_caption(caption, settings)
+            apply_table_caption(caption, settings, doc)
             formatted_captions.add(id(caption._element))
         apply_table_body(table, settings)
 
@@ -342,7 +402,7 @@ def refresh_all(doc, settings, *, _paragraphs=None, _tables=None) -> list[str]:
     paragraphs = _paragraphs if _paragraphs is not None else doc.paragraphs
     for para in paragraphs:
         if is_table_caption_paragraph(para, doc) and id(para._element) not in formatted_captions:
-            apply_table_caption(para, settings)
+            apply_table_caption(para, settings, doc)
 
     # One-time scan for captions in shapes/text frames.
     # Scan body elements in order, collecting shape caption texts with their

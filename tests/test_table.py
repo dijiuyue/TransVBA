@@ -169,6 +169,27 @@ class TestApplyTableCaption:
         run = para.runs[0]
         assert run.font.bold is True
 
+    def test_auto_numbered_caption_formats_numbering_prefix(self):
+        doc = Document()
+        _add_numbering_level(doc)
+        para = doc.add_paragraph("各气源向本工程供气量（×108Nm3/a）")
+        _set_paragraph_num_pr(para)
+        settings = TableSettings(title_font="黑体", title_size="小四", title_bold=True)
+
+        apply_table_caption(para, settings, doc)
+
+        lvl = doc.part.numbering_part._element.find(
+            f".//w:abstractNum[@w:abstractNumId='902']/w:lvl[@w:ilvl='6']",
+            W_NS,
+        )
+        rPr = lvl.find("w:rPr", W_NS)
+        fonts = rPr.find("w:rFonts", W_NS)
+        assert fonts.get(f"{{{W}}}eastAsia") == "黑体"
+        assert rPr.find("w:sz", W_NS).get(W_VAL) == "24"
+        assert rPr.find("w:szCs", W_NS).get(W_VAL) == "24"
+        assert rPr.find("w:b", W_NS).get(W_VAL) is None
+        assert rPr.find("w:bCs", W_NS).get(W_VAL) is None
+
     def test_multi_dot_caption_is_centered(self):
         doc = Document()
         para = doc.add_paragraph("表1.8.12-2  本工程车辆配置一览表")
@@ -236,6 +257,28 @@ class TestApplyTableBody:
         tr_height = table.rows[0]._tr.find(".//w:trHeight", W_NS)
         assert tr_height.get(W_VAL) == "340"
         assert tr_height.get(f"{{{W}}}hRule") == "atLeast"
+
+    def test_clears_cell_paragraph_indentation(self):
+        doc = Document()
+        table = doc.add_table(rows=1, cols=1)
+        para = table.cell(0, 0).paragraphs[0]
+        para.add_run("带缩进的单元格文字")
+        pPr = _ppr(para)
+        ind = etree.SubElement(pPr, f"{{{W}}}ind")
+        ind.set(f"{{{W}}}left", "720")
+        ind.set(f"{{{W}}}right", "360")
+        ind.set(f"{{{W}}}firstLine", "480")
+        ind.set(f"{{{W}}}hanging", "240")
+
+        apply_table_body(table, TableSettings())
+
+        ind = para._element.find(".//w:ind", W_NS)
+        assert ind.get(f"{{{W}}}left") == "0"
+        assert ind.get(f"{{{W}}}right") == "0"
+        assert ind.get(f"{{{W}}}firstLine") is None
+        assert ind.get(f"{{{W}}}hanging") is None
+        assert ind.get(f"{{{W}}}firstLineChars") is None
+        assert ind.get(f"{{{W}}}hangingChars") is None
 
 class TestRefreshAll:
     def test_finds_and_formats_table(self):
