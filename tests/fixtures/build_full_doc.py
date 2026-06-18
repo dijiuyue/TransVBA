@@ -17,7 +17,6 @@ def build(path: Path) -> None:
     doc.add_paragraph("1.1 研究背景")
     doc.add_paragraph("1.1.1 详细背景")
     doc.add_paragraph("1.1.1.1 更详细")
-    doc.add_paragraph("1.1.1.1.1 最详细")
 
     # Body
     doc.add_paragraph("这是一段正文，包含数字123和英文ABC。")

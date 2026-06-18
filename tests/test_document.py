@@ -202,6 +202,52 @@ class TestApplySettingsToDocument:
             assert run.font.size is not None
             assert abs(run.font.size.pt - 10.5) < 0.1, f"Expected size ~10.5pt, got {run.font.size.pt}pt"
 
+    @pytest.mark.parametrize("text", [
+        "4）《涂覆涂料前钢材表面处理 第1部分》（GB/T 8923.1-2011）；",
+        "5)《涂覆涂料前钢材表面处理 第3部分》（GB/T 18570.3-2005）；",
+        "（1）列表项保持原格式",
+        "(1) list item keeps original formatting",
+    ])
+    def test_manual_list_items_use_body_font_size_without_title_bold(self, text):
+        """Manual list items such as 4）/5）/(1) are body text, not titles."""
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "test.docx"
+            doc = Document()
+            para = doc.add_paragraph(text)
+            run = para.runs[0]
+            run.font.name = "Arial"
+            run.font.size = Pt(16)
+            run.font.bold = False
+
+            from lxml import etree
+            W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+            rPr = run._element.find(f"{{{W}}}rPr")
+            if rPr is None:
+                rPr = etree.SubElement(run._element, f"{{{W}}}rPr")
+            rFonts = rPr.find(f"{{{W}}}rFonts")
+            if rFonts is None:
+                rFonts = etree.SubElement(rPr, f"{{{W}}}rFonts")
+            rFonts.set(f"{{{W}}}eastAsia", "Arial")
+
+            doc.save(path)
+
+            settings = FormatSettings(body=BodySettings(font="黑体", size="五号", spacing=1.5))
+            out, _ = apply_settings_to_document(path, settings)
+
+            result = Document(out)
+            result_run = result.paragraphs[0].runs[0]
+            assert _get_run_eastasia_font(result_run) == "黑体"
+            assert result_run.font.size is not None
+            assert abs(result_run.font.size.pt - 10.5) < 0.1
+            assert result_run.font.bold is False
+
+            pPr = result.paragraphs[0]._element.find(
+                ".//w:pPr",
+                {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"},
+            )
+            outline = pPr.find("w:outlineLvl", {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}) if pPr is not None else None
+            assert outline is None
+
     def test_auto_detect_disabled_does_not_format_text_titles(self):
         """When auto_detect_numeric_titles=False, paragraphs with numeric text
         but no outline level should NOT be treated as titles."""

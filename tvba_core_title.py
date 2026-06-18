@@ -34,16 +34,11 @@ from tvba_core_normalize import (
 from tvba_utils import size_label_to_points, clean_para_text
 
 # Matches numeric title prefix: digits (and fullwidth digits) with dots/fullwidth dots,
-# optionally ending with a trailing dot, followed by space/tab and title text.
-_TITLE_RE = re.compile(r"^([\d０-９]+([\.．]\d+){0,6}\.?)[ \t]+(.+)$")
-
-# Chinese number prefix for Level 1 titles: 一、二、…、十 followed by 、， or space
-# Excludes ordinals like 第一、第二 where the number follows 第.
-_CHINESE_NUM_RE = re.compile(r"^(?!第)[一二三四五六七八九十]+[、，\s]")
+# optionally ending with a trailing dot, followed by optional space/tab and title text.
+_TITLE_RE = re.compile(r"^([\d０-９]+(?:[\.．]\d+){0,3}\.?)([ \t]*)(.+)$")
 
 # Legacy list-item markers such as 1), 1）, （1）, and a. are body list
-# markers, not content title levels.  Level 4/5 titles are recognized only by
-# dotted Arabic numbering: 1.1.1.1 and 1.1.1.1.1.
+# markers, not content title levels.
 _LIST_ITEM_RE = re.compile(r"(?!)")
 _LETTER_ITEM_RE = re.compile(r"(?!)")
 
@@ -69,10 +64,10 @@ def normalize_number_string(s: str) -> str:
 
 
 def identify_level_from_number(num_str: str) -> int:
-    """Map a normalized number string to title level 1-5 (0 = not a title)."""
+    """Map a normalized number string to title level 1-4 (0 = not a title)."""
     if not num_str:
         return 0
-    if not re.fullmatch(r"\d+(?:\.\d+){0,4}", num_str):
+    if not re.fullmatch(r"\d+(?:\.\d+){0,3}", num_str):
         return 0
     dot_count = num_str.count(".")
     if dot_count == 0:
@@ -80,13 +75,13 @@ def identify_level_from_number(num_str: str) -> int:
     if dot_count == 1 and num_str.endswith(".0"):
         return 1
     level = dot_count + 1
-    if 1 <= level <= 5:
+    if 1 <= level <= 4:
         return level
     return 0
 
 
 def identify_numeric_title_level(text: str) -> int:
-    """Identify title level from paragraph text. Returns 1-5 or 0.
+    """Identify title level from paragraph text. Returns 1-4 or 0.
 
     Detects Arabic dotted-number titles: 1, 1.1, 1.1.1, etc.
     """
@@ -97,10 +92,23 @@ def identify_numeric_title_level(text: str) -> int:
     if not m:
         return 0
     num_part = normalize_number_string(m.group(1))
+    sep = m.group(2)
     title_text = m.group(3).strip()
+    level = identify_level_from_number(num_part)
+    if level == 0:
+        return 0
+    if _looks_like_list_marker_tail(title_text):
+        return 0
+    if "." in num_part and not sep:
+        return 0
     if "." not in num_part and _looks_like_quantity_or_body_sentence(title_text):
         return 0
-    return identify_level_from_number(num_part)
+    return level
+
+
+def _looks_like_list_marker_tail(title_text: str) -> bool:
+    """Reject list-number tails after an Arabic digit, e.g. 1), 1）, 1、."""
+    return bool(title_text) and title_text[0] in ")]}）】、."
 
 
 def _looks_like_quantity_or_body_sentence(title_text: str) -> bool:
@@ -115,9 +123,8 @@ def _looks_like_quantity_or_body_sentence(title_text: str) -> bool:
 
 
 def identify_chinese_title(text: str) -> bool:
-    """Check if text starts with a Chinese number (一、二、三…十)."""
-    text = clean_para_text(text)
-    return bool(text and _CHINESE_NUM_RE.match(text))
+    """Chinese-number headings are intentionally not auto-detected."""
+    return False
 
 
 def identify_list_item(text: str) -> int:
@@ -150,22 +157,18 @@ def _find_split_positions(text: str) -> list[int]:
     """Find non-zero indices where new title patterns start within paragraph text.
 
     Used to detect compound paragraphs that contain multiple concatenated
-    titles (e.g. "一、项目背景1 内部文档现状1.1 格式问题梳理").
+    Arabic-numbered titles (e.g. "1 项目背景1.1 格式问题梳理").
     """
     positions = set()
 
-    # 1. Chinese number markers: 一、二、三、...
-    # Exclude ordinals like 第一、第二 (where the number follows 第).
-    for m in re.finditer(r'(?<![第])[一二三四五六七八九十]+[、，]', text):
-        if m.start() > 0:
-            positions.add(m.start())
-
-    # 2. Dotted numbers (1.1, 1.1.1, etc.) at non-start, not preceded by digit
-    for m in re.finditer(r'\d+(?:\.\d)+', text):
+    # 1. Dotted numbers (1.1, 1.1.1, etc.) at non-start, not preceded by digit
+    for m in re.finditer(r'\d+(?:\.\d+){1,3}(?!\.\d)', text):
         pos = m.start()
         if pos == 0:
             continue
-        if text[pos - 1].isdigit():
+        if text[pos - 1].isdigit() or text[pos - 1] == ".":
+            continue
+        if _looks_like_reference_or_quantity_number(text, pos, m.end()):
             continue
         end = m.end()
         if end < len(text) and text[end] in ' \t.':
@@ -173,12 +176,14 @@ def _find_split_positions(text: str) -> list[int]:
         elif end < len(text) and '一' <= text[end] <= '鿿':
             positions.add(pos)
 
-    # 3. Plain numbers after Chinese char or sentence-ending punctuation
-    #    (but NOT after "." which would indicate a dotted number like 1.1),
-    #    followed by space then Chinese text (Level 1 titles).
+    # 2. Plain numbers after clear title boundaries
+    #    (but NOT after "." which would indicate a dotted number like 1.1).
+    #    Level-1 headings may be written as "1 概述" or "1概述".
     for m in re.finditer(
-        r'(?<=[一-鿿。！？、，\s])\d+(?=\s+[一-鿿])', text
+        r'(?<=[。！？；;：:\s])(?:\d+(?=\s+[一-鿿])|[1-9](?=[一-鿿]))', text
     ):
+        if _looks_like_plain_number_quantity(text, m.start(), m.end()):
+            continue
         positions.add(m.start())
 
     # Sort and merge nearby positions (within 2 chars)
@@ -190,11 +195,36 @@ def _find_split_positions(text: str) -> list[int]:
     return merged
 
 
+def _looks_like_reference_or_quantity_number(text: str, start: int, end: int) -> bool:
+    """Reject dotted numbers that are references or quantities, not titles."""
+    left = text[max(0, start - 12):start]
+    right = text[end:end + 12]
+    nearby = text[max(0, start - 12):min(len(text), end + 12)]
+
+    if re.search(r"(?:GB|GB/T|SY/T|DL/T|NB/T|ISO|API)\s*$", left, re.IGNORECASE):
+        return True
+    if re.search(r"(?:GB|GB/T|SY/T|DL/T|NB/T|ISO|API)\s*", nearby, re.IGNORECASE):
+        return True
+    if re.search(r"第\s*$", left):
+        return True
+    if re.match(r"\s*(?:的)?(?:节|章节|条|款|部分|规定|要求|相关要求|方法)", right):
+        return True
+    if re.match(r"\s*(?:公里|km|m|mm|cm|μm|um|%|MPa|kPa|h|小时|次|处|根|级)", right, re.IGNORECASE):
+        return True
+    return False
+
+
+def _looks_like_plain_number_quantity(text: str, start: int, end: int) -> bool:
+    """Reject plain numeric quantities like '2 级' and '3 处'."""
+    right = text[end:end + 8]
+    return bool(re.match(r"\s*(?:级|次|处|根|个|条|项|年|月|日|小时|h|m|mm|cm|km|%)", right, re.IGNORECASE))
+
+
 def split_compound_paragraphs(doc, *, _paragraphs=None) -> list:
     """Split paragraphs that contain multiple concatenated titles.
 
     When a single paragraph contains multiple title patterns (e.g.
-    "一、项目背景1 内部文档现状1.1 格式问题梳理"), the system can
+    "1 项目背景1.1 格式问题梳理"), the system can
     only detect the first title. This function pre-processes the document
     by splitting such compound paragraphs into separate paragraphs at
     title boundaries.
@@ -207,11 +237,15 @@ def split_compound_paragraphs(doc, *, _paragraphs=None) -> list:
     if not paragraphs:
         return paragraphs
 
+    from tvba_core_body import is_manual_list_item
+
     body = doc.element.body
     # Build a map from paragraph text to its XML element.
     # We iterate by text content rather than element to avoid stale references.
     text_to_elems: dict[str, list] = {}
     for para in paragraphs:
+        if is_manual_list_item(para) or _has_numbering_hint(para):
+            continue
         text = (para.text or "").strip()
         if text:
             text_to_elems.setdefault(text, []).append(para._element)
@@ -387,11 +421,15 @@ def _has_numbering_hint(para, _style_by_id=None) -> bool:
 
 def auto_detect_and_format(doc, settings, list_resolver=None, *, _paragraphs=None, _outline_cache=None, _style_by_id=None, _toc_style_ids=None) -> None:
     """Auto-detect numeric titles and apply title formatting."""
+    from tvba_core_body import is_manual_list_item
     from tvba_core_toc import is_toc_paragraph
 
     paragraphs = _paragraphs if _paragraphs is not None else doc.paragraphs
     for para in paragraphs:
         if is_toc_paragraph(para, _toc_style_ids=_toc_style_ids):
+            continue
+
+        if is_manual_list_item(para):
             continue
 
         # Skip paragraphs that already have an outline level set by the user
@@ -407,7 +445,8 @@ def auto_detect_and_format(doc, settings, list_resolver=None, *, _paragraphs=Non
         # Priority 1: Arabic numeric title text detection
         level = identify_numeric_title_level(text)
 
-        # Priority 1b: Chinese number titles (一、二、三…)
+        # Priority 1b: Reserved compatibility hook.  Chinese-number titles
+        # (一、二、三...) are intentionally not auto-detected.
         if level == 0 and identify_chinese_title(text):
             level = 1
 
@@ -417,7 +456,7 @@ def auto_detect_and_format(doc, settings, list_resolver=None, *, _paragraphs=Non
         # items (e.g. "1）第一项") as titles.
         if level == 0 and list_resolver is not None and _has_numbering_hint(para, _style_by_id):
             list_level = list_resolver.get_list_level(para)
-            if list_level is not None and 1 <= list_level <= 5:
+            if list_level is not None and 1 <= list_level <= 4:
                 # COM resolver: verify via rendered list text
                 if hasattr(list_resolver, 'get_list_text'):
                     list_text = list_resolver.get_list_text(para)

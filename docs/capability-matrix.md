@@ -21,14 +21,14 @@ Status: 2026-05-16
 
 | Capability | Status | Notes |
 |---|---|---|
-| Arabic numeric titles (1, 1.1, 1.1.1) | ✅ | Pattern-based detection |
-| Chinese number titles (一、二、三) | ✅ | Pattern-based detection |
+| Arabic numeric titles (1, 1.1, 1.1.1, 1.1.1.1) | ✅ | Pattern-based detection for levels 1-4 |
+| Chinese number titles (一、二、三) | ➖ | Intentionally skipped; only Arabic numeric headings are auto-detected |
 | Word multilevel list headings | ⚠️ | COM resolver enabled by default; docx fallback is limited (no list text resolution) |
 | Compound paragraph splitting | ✅ | Splits concatenated titles |
-| Title formatting (5 levels) | ✅ | Outline level, font, size, bold, alignment, spacing |
+| Title formatting (4 auto-detected levels) | ✅ | Outline level, font, size, bold, alignment, spacing |
 | Respect existing outline levels | ✅ | User-set outline levels preserved |
 | Heading style recognition | ✅ | Word built-in heading styles recognized |
-| List item detection (Level 4/5) | ⚠️ | Regex exists but not auto-applied to avoid false positives |
+| List item detection (1), （1）, a.) | ➖ | Intentionally skipped to avoid false positives |
 
 ## COM / List Resolver
 

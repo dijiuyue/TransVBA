@@ -1,4 +1,4 @@
-"""Build a test .docx with numeric titles at all 5 levels."""
+"""Build a test .docx with numeric titles at levels 1-4."""
 from docx import Document
 import sys
 from pathlib import Path
@@ -10,7 +10,6 @@ def build(path: Path) -> None:
     doc.add_paragraph("1.1 二级标题")
     doc.add_paragraph("1.1.1 三级标题")
     doc.add_paragraph("1.1.1.1 四级标题")
-    doc.add_paragraph("1.1.1.1.1 五级标题")
     doc.add_paragraph("这是一段正文，在标题之后。")
     doc.add_paragraph("1.0 特殊一级标题")
     doc.save(path)

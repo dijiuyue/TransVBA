@@ -205,18 +205,33 @@ def _set_bool_property(rPr, tag: str, value: bool) -> None:
         elem.set(_W_VAL, "0")
 
 
-def _set_paragraph_mark_bold(para, bold: bool) -> None:
+def _format_paragraph_mark_for_caption(para, settings) -> None:
     pPr = para._element.find(f"{{{W}}}pPr")
     if pPr is None:
         pPr = etree.SubElement(para._element, f"{{{W}}}pPr")
     rPr = pPr.find(f"{{{W}}}rPr")
     if rPr is None:
         rPr = etree.SubElement(pPr, f"{{{W}}}rPr")
+
+    rFonts = rPr.find(f"{{{W}}}rFonts")
+    if rFonts is None:
+        rFonts = etree.SubElement(rPr, f"{{{W}}}rFonts")
+    rFonts.set(f"{{{W}}}ascii", "Times New Roman")
+    rFonts.set(f"{{{W}}}hAnsi", "Times New Roman")
+    rFonts.set(f"{{{W}}}eastAsia", settings.title_font)
+
+    half_points = str(int(size_label_to_points(settings.title_size) * 2))
+    for tag in ("sz", "szCs"):
+        elem = rPr.find(f"{{{W}}}{tag}")
+        if elem is None:
+            elem = etree.SubElement(rPr, f"{{{W}}}{tag}")
+        elem.set(_W_VAL, half_points)
+
     for tag in ("b", "bCs"):
-        _set_bool_property(rPr, tag, bold)
+        _set_bool_property(rPr, tag, settings.title_bold)
 
 
-def _set_numbering_level_bold(para, doc, bold: bool) -> None:
+def _set_numbering_level_run_format(para, doc, settings) -> None:
     ilvl, num_id = _effective_num_pr(para, doc)
     lvl = _numbering_level(doc, num_id, ilvl) if num_id is not None else None
     if lvl is None:
@@ -224,8 +239,26 @@ def _set_numbering_level_bold(para, doc, bold: bool) -> None:
     rPr = lvl.find(f"{{{W}}}rPr")
     if rPr is None:
         rPr = etree.SubElement(lvl, f"{{{W}}}rPr")
+
+    rFonts = rPr.find(f"{{{W}}}rFonts")
+    if rFonts is None:
+        rFonts = etree.SubElement(rPr, f"{{{W}}}rFonts")
+    rFonts.set(f"{{{W}}}ascii", "Times New Roman")
+    rFonts.set(f"{{{W}}}hAnsi", "Times New Roman")
+    rFonts.set(f"{{{W}}}eastAsia", settings.title_font)
+
+    half_points = str(int(size_label_to_points(settings.title_size) * 2))
+    sz = rPr.find(f"{{{W}}}sz")
+    if sz is None:
+        sz = etree.SubElement(rPr, f"{{{W}}}sz")
+    sz.set(_W_VAL, half_points)
+    szCs = rPr.find(f"{{{W}}}szCs")
+    if szCs is None:
+        szCs = etree.SubElement(rPr, f"{{{W}}}szCs")
+    szCs.set(_W_VAL, half_points)
+
     for tag in ("b", "bCs"):
-        _set_bool_property(rPr, tag, bold)
+        _set_bool_property(rPr, tag, settings.title_bold)
 
 
 def apply_figure_caption(para, settings, doc=None) -> None:
@@ -238,8 +271,8 @@ def apply_figure_caption(para, settings, doc=None) -> None:
         size_pt=size_label_to_points(settings.title_size),
         bold=settings.title_bold,
     )
-    _set_paragraph_mark_bold(para, settings.title_bold)
-    _set_numbering_level_bold(para, doc, settings.title_bold)
+    _format_paragraph_mark_for_caption(para, settings)
+    _set_numbering_level_run_format(para, doc, settings)
 
     # Remove any outline level — captions are not headings
     _remove_outline_level(para)

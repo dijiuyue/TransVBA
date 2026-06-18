@@ -23,6 +23,15 @@ _ALIGNMENT_MAP = {
     "两端对齐": 3,
 }
 
+
+def is_manual_list_item(para) -> bool:
+    """Return True for manual list items that should be formatted as body."""
+    import re
+
+    text = (para.text or "").strip()
+    return bool(re.match(r"^(?:\d+[)）]|[（(]\d+[)）])", text))
+
+
 def apply_normal_style(doc, body) -> None:
     """Apply body settings to the Normal style."""
     normal = doc.styles["Normal"]

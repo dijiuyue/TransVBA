@@ -58,7 +58,7 @@ class TestEndToEnd:
             out, _ = apply_settings_to_document(path, settings)
             result = Document(out)
 
-            expected_levels = ["0", "1", "2", "3", "4"]
+            expected_levels = ["0", "1", "2", "3"]
             for i, expected in enumerate(expected_levels):
                 pPr = result.paragraphs[i]._element.find(
                     ".//w:pPr",
@@ -68,3 +68,10 @@ class TestEndToEnd:
                 assert outline is not None
                 actual = outline.get("{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val")
                 assert actual == expected, f"Paragraph {i}: expected outline level {expected}, got {actual}"
+
+            pPr = result.paragraphs[4]._element.find(
+                ".//w:pPr",
+                {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}
+            )
+            outline = pPr.find("w:outlineLvl", {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}) if pPr is not None else None
+            assert outline is None

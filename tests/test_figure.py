@@ -207,6 +207,54 @@ class TestApplyFigureCaption:
         assert rPr.find("w:b", W_NS).get(W_VAL) == "0"
         assert rPr.find("w:bCs", W_NS).get(W_VAL) == "0"
 
+    def test_auto_numbered_caption_formats_numbering_font_and_size(self):
+        doc = Document()
+        _add_numbering_level(doc)
+        numbering = doc.part.numbering_part._element
+        lvl = numbering.find(".//w:abstractNum[@w:abstractNumId='901']/w:lvl[@w:ilvl='6']", W_NS)
+        rPr = etree.SubElement(lvl, f"{{{W}}}rPr")
+        rFonts = etree.SubElement(rPr, f"{{{W}}}rFonts")
+        rFonts.set(W_VAL, "黑体")
+        sz = etree.SubElement(rPr, f"{{{W}}}sz")
+        sz.set(W_VAL, "44")
+
+        para = doc.add_paragraph("阴极保护站位置示意图")
+        _set_paragraph_num_pr(para)
+
+        apply_figure_caption(
+            para,
+            FigureSettings(title_font="宋体", title_size="小四", title_bold=False),
+            doc,
+        )
+
+        rFonts = rPr.find("w:rFonts", W_NS)
+        sz = rPr.find("w:sz", W_NS)
+        szCs = rPr.find("w:szCs", W_NS)
+        assert rFonts.get(f"{{{W}}}eastAsia") == "宋体"
+        assert rFonts.get(f"{{{W}}}ascii") == "Times New Roman"
+        assert sz.get(W_VAL) == "24"
+        assert szCs.get(W_VAL) == "24"
+
+    def test_caption_paragraph_mark_uses_caption_font_and_size(self):
+        doc = Document()
+        para = doc.add_paragraph("图 1-1 示例")
+
+        apply_figure_caption(
+            para,
+            FigureSettings(title_font="宋体", title_size="小四", title_bold=False),
+            doc,
+        )
+
+        pPr = para._element.find("w:pPr", W_NS)
+        rPr = pPr.find("w:rPr", W_NS)
+        rFonts = rPr.find("w:rFonts", W_NS)
+        sz = rPr.find("w:sz", W_NS)
+        szCs = rPr.find("w:szCs", W_NS)
+        assert rFonts.get(f"{{{W}}}eastAsia") == "宋体"
+        assert rFonts.get(f"{{{W}}}ascii") == "Times New Roman"
+        assert sz.get(W_VAL) == "24"
+        assert szCs.get(W_VAL) == "24"
+
     def test_multi_dot_caption_is_centered(self):
         doc = Document()
         para = doc.add_paragraph("图1.8.3-1  工艺系统示意图")

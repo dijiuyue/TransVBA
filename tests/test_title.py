@@ -8,6 +8,8 @@ from tvba_core_title import (
     normalize_number_string,
     apply_title_style,
     auto_detect_and_format,
+    split_compound_paragraphs,
+    _find_split_positions,
     identify_list_item,
     identify_chinese_title,
     _strip_list_prefix,
@@ -45,8 +47,8 @@ class TestIdentifyLevelFromNumber:
     def test_level_4_three_dots(self):
         assert identify_level_from_number("1.1.2.3") == 4
 
-    def test_level_5_four_dots(self):
-        assert identify_level_from_number("1.1.2.3.4") == 5
+    def test_level_0_four_dots(self):
+        assert identify_level_from_number("1.1.2.3.4") == 0
 
     def test_level_0_too_many_dots(self):
         assert identify_level_from_number("1.1.2.3.4.5") == 0
@@ -72,8 +74,8 @@ class TestIdentifyNumericTitleLevel:
     def test_no_number_returns_0(self):
         assert identify_numeric_title_level("引言") == 0
 
-    def test_number_without_space_returns_0(self):
-        assert identify_numeric_title_level("1引言") == 0
+    def test_level_1_without_space_works(self):
+        assert identify_numeric_title_level("1引言") == 1
 
     def test_fullwidth_dots_work(self):
         assert identify_numeric_title_level("1．1 背景") == 2
@@ -84,9 +86,19 @@ class TestIdentifyNumericTitleLevel:
     def test_trailing_dot_normalized(self):
         assert identify_numeric_title_level("1. 引言") == 1
 
-    def test_level_1_requires_space_or_tab(self):
-        assert identify_numeric_title_level("1引言") == 0
+    def test_level_1_allows_optional_space_or_tab(self):
+        assert identify_numeric_title_level("1引言") == 1
         assert identify_numeric_title_level("1 引言") == 1
+
+    def test_dotted_title_requires_space_or_tab(self):
+        assert identify_numeric_title_level("1.1前言") == 0
+        assert identify_numeric_title_level("1.1 前言") == 2
+
+    def test_bracket_list_markers_are_not_titles(self):
+        assert identify_numeric_title_level("1）适用范围") == 0
+        assert identify_numeric_title_level("1) 适用范围") == 0
+        assert identify_numeric_title_level("(1) 适用范围") == 0
+        assert identify_numeric_title_level("（1）适用范围") == 0
 
     def test_too_many_dots_returns_0(self):
         assert identify_numeric_title_level("1.1.2.3.4.5 太深") == 0
@@ -104,6 +116,12 @@ class TestIdentifyNumericTitleLevel:
 
     def test_plain_integer_heading_still_matches(self):
         assert identify_numeric_title_level("20 \u7ba1\u9053\u5de5\u7a0b\u7ef4\u4fee\u3001\u62a2\u4fee") == 1
+
+
+class TestIdentifyChineseTitle:
+    def test_chinese_number_titles_are_not_detected(self):
+        assert identify_chinese_title("一、适用范围") is False
+        assert identify_chinese_title("二、工程概况") is False
 
 
 class TestApplyTitleStyle:
@@ -313,6 +331,93 @@ class TestAutoDetectAndFormat:
         assert resolver.text_calls == 1
 
 
+class TestSplitCompoundParagraphs:
+    def test_does_not_split_zhiyi_sentence_fragment(self):
+        text = "5)当存在下列情况之一，且无有效措施时，不应进行施工："
+        assert _find_split_positions(text) == []
+
+        doc = Document()
+        doc.add_paragraph(text)
+        paragraphs = split_compound_paragraphs(doc)
+
+        assert len(paragraphs) == 1
+        assert paragraphs[0].text == text
+
+    def test_does_not_split_chinese_number_title_marker(self):
+        text = "前一段正文。一、适用范围"
+        assert _find_split_positions(text) == []
+
+    def test_splits_arabic_number_title_after_sentence_boundary(self):
+        text = "前一段正文。1 概述"
+        assert _find_split_positions(text) == [6]
+
+    def test_does_not_split_level_5_dotted_number(self):
+        text = "前一段正文。1.1.1.1.1 五级"
+        assert _find_split_positions(text) == []
+
+    def test_splits_level_1_without_space_after_sentence_boundary(self):
+        text = "前一段正文。1概述"
+        assert _find_split_positions(text) == [6]
+
+    def test_does_not_split_year_as_level_1_without_space(self):
+        text = "前一段正文。2026年继续实施。"
+        assert _find_split_positions(text) == []
+
+    def test_does_not_split_standard_part_numbers_inside_list_items(self):
+        texts = [
+            "4）《涂覆涂料前钢材表面处理 表面清洁度的目视评定 第1部分：未涂覆过的钢材表面》（GB/T 8923.1-2011）；",
+            "5）《涂覆涂料前钢材表面处理 表面清洁度的评定试验 第3部分 涂覆涂料前钢材表面的灰尘度评定》（GB/T 18570.3-2005）；",
+            "6）《涂覆涂料前钢材表面处理 喷射清理后的钢材表面粗糙度特性 第4部分：ISO 表面粗糙度比较样块的校准》（GB/T 13288.4-2013）；",
+            "7）《涂覆涂料前钢材表面处理 喷射清理后的钢材表面粗糙度特性 第5部分：表面粗糙度的测定方法 复制带法》（GB/T 13288.5-2009）；",
+        ]
+        for text in texts:
+            assert _find_split_positions(text) == []
+
+    def test_manual_list_items_are_not_split_even_with_dotted_references(self):
+        doc = Document()
+        text = "3）按 5.3.4 节的规定进行防腐层涂装，并达到 GB/T 8923.1 规定的 Sa2 1/2 级。"
+        doc.add_paragraph(text)
+
+        paragraphs = split_compound_paragraphs(doc)
+
+        assert len(paragraphs) == 1
+        assert paragraphs[0].text == text
+
+    def test_auto_numbered_list_items_are_not_split(self):
+        from lxml import etree
+
+        doc = Document()
+        text = "按 5.3.4 节的规定进行防腐层涂装。1.1 这也不应在列表项内拆成标题"
+        para = doc.add_paragraph(text)
+        W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+        pPr = para._element.get_or_add_pPr()
+        numPr = etree.SubElement(pPr, f"{{{W}}}numPr")
+        ilvl = etree.SubElement(numPr, f"{{{W}}}ilvl")
+        ilvl.set(f"{{{W}}}val", "0")
+        numId = etree.SubElement(numPr, f"{{{W}}}numId")
+        numId.set(f"{{{W}}}val", "1")
+
+        paragraphs = split_compound_paragraphs(doc)
+
+        assert len(paragraphs) == 1
+        assert paragraphs[0].text == text
+
+    def test_does_not_split_reference_or_quantity_numbers(self):
+        texts = [
+            "防腐层质量应达到 5.3.5 章节的相关要求。",
+            "复涂后应按 5.3.3 节的规定涂敷面漆。",
+            "应根据 GB/T 8923.1 规定进行检验。",
+            "灰尘度应达到 GB/T 18570.3 规定的 2 级及以上。",
+            "全长约 7.819 公里，管径为 18”。",
+        ]
+        for text in texts:
+            assert _find_split_positions(text) == []
+
+    def test_does_not_split_after_comma_or_chinese_character(self):
+        assert _find_split_positions("前一段正文，1概述") == []
+        assert _find_split_positions("前一段正文第1部分") == []
+
+
 class TestIdentifyListItem:
     """Legacy list markers must not be treated as title levels."""
 
@@ -365,8 +470,8 @@ class TestStripListPrefix:
         assert _strip_list_prefix("a. 说明内容", 5) == ""
 
 
-class TestAutoDetectLevel45:
-    """Verify level 4/5 dotted-number detection in auto_detect_and_format."""
+class TestAutoDetectLevel4:
+    """Verify level-4 dotted-number detection in auto_detect_and_format."""
 
     def test_level4_bracket_does_not_apply_title_style(self):
         doc = Document()
@@ -404,14 +509,14 @@ class TestAutoDetectLevel45:
         ol = get_effective_outline_level(para)
         assert ol == 3
 
-    def test_level5_dotted_number_applies_title_style(self):
+    def test_level5_dotted_number_does_not_apply_title_style(self):
         doc = Document()
         para = doc.add_paragraph("1.1.1.1.1 适用范围说明")
         settings = FormatSettings()
         auto_detect_and_format(doc, settings)
         from tvba_core_oox import get_effective_outline_level
         ol = get_effective_outline_level(para)
-        assert ol == 4
+        assert ol is None
 
     def test_body_like_1kg_not_detected(self):
         """'1)kg' should not be treated as a title."""
