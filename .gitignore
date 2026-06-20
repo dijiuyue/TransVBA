@@ -25,4 +25,4 @@ venv/
 *.whl
 pip-wheel-metadata/
 .claude/
-".pytest-packages/" 
+.pytest-packages/
